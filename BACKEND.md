@@ -3,9 +3,10 @@
 This folder contains the FastAPI API, PostgreSQL/PostGIS schema and queries, caching,
 request validation, external source clients, and connection points for the team's
 data, calculations and AI.
-It implements the ten routes in the blueprint. No real processed dataset or
-teammate component was supplied. The connected database currently has only the
-manual Karachi/Gulshan placeholder rows; unavailable components return 503.
+It implements the ten routes in the blueprint. A real-source Karachi/Gulshan
+geometry, grid, population, and limited air-quality batch is now prepared under
+`data/processed/karachi/` and imported into the configured database; unavailable
+scientific components still return 503.
 
 The project folder was empty before this work. Both the four-page backend brief
 supplied by Abd and the 13-page UrbanPulse blueprint were read in full.
@@ -19,17 +20,26 @@ The blueprint's frontend and illustrative formulas have not been implemented her
 Direct raw-data clients are implemented for Open-Meteo Air Quality and Overpass.
 Public catalog clients are implemented for Landsat, Sentinel-2, Earthdata
 IMERG/SRTM, WorldPop and the two approved Karachi EO4SD-Urban datasets. The Karachi
-adapter can also stream the six published ZIP resources to local storage for
-Arjun's pipeline. Catalog metadata is not a measurement or processed raster.
+adapter can stream the six published ZIP resources, and the population adapter can
+stream the fixed catalog-verified Pakistan 2025 constrained 1 km GeoTIFF. Catalog
+metadata is not a measurement or processed raster.
 
 [Source inspection and connection documentation](docs/source-connections.md)
 lists every blueprint source, the verified APIs, implemented calls and remaining
 file/credential requirements. HTTPX is now a runtime dependency; update an existing
 environment with `python -m pip install -r requirements-dev.txt`.
 
-The external calls are invoked by the data pipeline using agreed selections and
-Arjun's raw receiver. They do not automatically run from dashboard routes or at
-startup. [The handoff](docs/teammate-handoff.md) includes the exact call site.
+The external calls are invoked by the data pipeline using explicit selections.
+They do not automatically run from dashboard routes or at startup. See the
+[Karachi ingestion guide](docs/data-ingestion.md) and [handoff](docs/teammate-handoff.md).
+
+Install optional processing dependencies and reproduce the committed batch with:
+
+```powershell
+python -m pip install -r requirements-data.txt
+python -m scripts.karachi_data_pipeline prepare
+python -m scripts.karachi_data_pipeline import
+```
 
 ## Run it on this computer
 
@@ -74,7 +84,7 @@ backend's actual hostnames. Their values are JSON arrays, as shown in `.env.exam
 
 ## Send teammates
 
-Share `backend/`, both requirements files, `.env.example`, `Dockerfile`,
+Share `backend/`, the requirements files, `.env.example`, `Dockerfile`,
 `.dockerignore`, `.gitignore`, `tests/`, `pytest.ini`, this README and `docs/`.
 Do not include `.venv`, `.env`, caches or temporary PDF images.
 
@@ -90,9 +100,7 @@ Do not include `.venv`, `.env`, caches or temporary PDF images.
 
 | Owner | Missing input |
 | --- | --- |
-| Arjun + Abd | Real source selections/requests, raw receiver, needed download access and files |
-| Arjun | Processing decisions and code; processed city/area/grid records, measurements, units, dates and source limitations |
-| Infinity + Arjun | Actual boundaries/grid geometry, stable IDs, aligned WGS84 GeoJSON; agreement on the layer transport choices |
+| Arjun + data owners | Scene/product decisions and processing for temperature, NDVI, rainfall, elevation, slope, road density and green percentage |
 | Chip | Area risk and exposure adapter, aggregation rules, score meanings, thresholds, units and methodology |
 | Arjun + Chip | Simulator function, request schema/ranges/units, scenario-field mapping and documented assumptions |
 | Arjun | AI adapter, strict request/response schemas, provider configuration and controlled prompts |
@@ -102,9 +110,10 @@ Do not include `.venv`, `.env`, caches or temporary PDF images.
 
 No live teammate component is connected yet. The database routes work once their
 records are loaded. Risk, simulation and AI remain explicitly unavailable until
-their adapters are registered. External clients have passed limited live
-connectivity checks, but no team dataset or processing pipeline is connected.
-The existing service projections still accept processed records for the routes.
+their adapters are registered. External clients and the reproducible Karachi
+pipeline have passed live-source and local validation checks. The existing service
+projections accept its processed records; see `docs/verification.md` for live import
+status.
 
 The frontend now calls the documented GET routes through `lib/api.ts`, maps
 snake_case to camelCase, and shows explicit missing/error states. Its simulator and
@@ -119,8 +128,9 @@ AI pages remain pending the owner-defined POST models. See the [API contract](do
 ```
 
 The latest recorded checks are in [verification.md](docs/verification.md).
-All test records and provider responses are synthetic and exist only in `tests/`.
-They do not verify scientific results, real datasets or real AI behaviour.
+Transport fixtures are synthetic and clearly isolated in `tests/`. The committed
+Karachi batch is built from real public sources and has separate contract tests, but
+those checks do not establish scientific validity or test real AI.
 
 An optional PostGIS test runs if `TEST_DATABASE_URL` is set in the shell to a
 **disposable test database**, with PostGIS already enabled. It creates and removes
@@ -130,8 +140,10 @@ upserts, transaction rollback and scenario writes.
 ## Built With
 
 Built With: Python, FastAPI, Uvicorn, PostgreSQL, PostGIS, asyncpg, Pydantic,
-pydantic-settings, geojson-pydantic, NumPy, pytest, and HTTPX.
-The configured Supabase PostgreSQL/PostGIS schema and read routes have been checked
-live without writes; the disposable write/rollback test still requires
-`TEST_DATABASE_URL`. No runtime LLM provider or project dataset is configured. External source metadata
-and transport checks do not count as scientific validation or a loaded city dataset.
+pydantic-settings, geojson-pydantic, NumPy, pytest, and HTTPX. Optional data
+processing uses Shapely, PyProj, PyShp, and Rasterio from `requirements-data.txt`.
+The configured Supabase PostgreSQL/PostGIS schema, atomic real-data import, geometry,
+and read routes have been checked live; the disposable write/rollback test still requires
+`TEST_DATABASE_URL`. No runtime LLM provider is configured. External source metadata,
+transport checks, and successful parsing do not by themselves establish scientific
+validity.

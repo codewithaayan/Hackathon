@@ -19,7 +19,7 @@ does not establish that a chosen city's data is available or scientifically suit
 | Open-Meteo Air Quality | Public HTTP JSON API backed by CAMS; customer access is a separate offering | Selected hourly raw values and original units/times | Arjun's coordinates, variables, dates and model domain; processing and attribution |
 | NASA GPM IMERG | Public CMR collection/granule metadata; data through NASA/PPS download services | CMR catalog requests for caller-selected IMERG short name/version | Early/Late/Final product/version choice, files, access requirements and processing; no rainfall conversion |
 | OpenStreetMap / Overpass | Public interpreter accepts Overpass QL and returns OSM JSON | Bounded POST of Arjun's statements, with result caching | Arjun's selectors, spatial extent and interpretation; OSM-to-feature/geometry processing |
-| WorldPop | Population catalog REST API with metadata/file links; separate analytical APIs also exist | Dataset alias listing and selected dataset/country metadata | Product/year/resolution choice, raster files and population processing; no population-statistics request is submitted |
+| WorldPop | Population catalog REST API with metadata/file links; separate analytical APIs also exist | Dataset alias listing, selected dataset/country metadata, and bounded download of the catalog-verified Pakistan 2025 constrained 1 km GeoTIFF | Revisit the product only if the team intentionally replaces the documented R2025A selection |
 | Copernicus DEM | Copernicus Data Space catalog/download access, including DEM products | Documented connection point only | Product/resolution/access route and files; Abd can add the chosen download request, Arjun handles elevation/slope processing |
 | SRTM | Earthdata catalog and authenticated file access | CMR metadata requests for caller-selected SRTM short name/version | Tile/product selection, Earthdata access and files; no slope calculation |
 | Sentinel-2 | Public Copernicus Data Space STAC catalog; OData product download requires a token | One-page STAC search for caller-selected L1C or L2A | Product/band selection and download credentials/files; no NDVI/cloud filtering |
@@ -111,6 +111,7 @@ Selection models live in `backend/services/source_requests.py`.
 | `earthdata.fetch_earthdata_granules(http, selection)` | `EarthdataGranuleSearch`: short name, version, bbox, dates, page number/limit | `GET https://cmr.earthdata.nasa.gov/search/granules.json` |
 | `population.fetch_worldpop_datasets(http)` | None; lists available population aliases | `GET https://hub.worldpop.org/rest/data/pop` |
 | `population.fetch_worldpop_catalog(http, selection)` | `WorldPopSearch`: dataset alias, optional ISO3 country | `GET https://hub.worldpop.org/rest/data/pop/{dataset}` |
+| `population.download_worldpop_pak_2025(http, directory)` | Fixed catalog record 78735: Pakistan 2025 constrained R2025A v1, 1 km | Streams the exact `data.worldpop.org` GeoTIFF selected in `docs/data-ingestion.md` |
 | `karachi.fetch_karachi_catalog(http, selection)` | `KarachiCatalogRequest`: one of the two approved datasets | `GET https://energydata.info/api/3/action/package_show` with the fixed dataset ID |
 | `karachi.download_karachi_file(http, selection, directory)` | `KarachiFileRequest`: one of six fixed resources; caller-supplied storage directory | Streams the corresponding `datacatalogfiles.worldbank.org` ZIP to its published filename |
 | `karachi.load_karachi_file(selection, path, max_bytes=...)` | Matching published local filename and explicit byte limit | No HTTP call; validates the local ZIP container and returns its path |
@@ -215,8 +216,9 @@ Raster/file download work stays in the corresponding source module once the team
 supplies selected asset links/IDs, expected file formats, authentication and a
 storage destination. Do not construct guessed tile URLs, add provider credentials
 to source control, or silently swap sources. `weather.py` keeps IMERG/ERA5 file
-access documented as pending; `satellite.py` is the satellite/DEM download boundary;
-`population.py` is the WorldPop raster boundary.
+access documented as pending; `satellite.py` is the satellite/DEM download boundary.
+`population.py` now includes only the fixed WorldPop Pakistan 2025 constrained 1 km
+selection documented in `data-ingestion.md`; other products remain unselected.
 
 The two requested Kaggle weather/air-quality datasets were not added because they
 overlap the already connected sources. MapTiler was not added because the team is

@@ -2,9 +2,9 @@
 
 Checks run through 30 September 2026 on this Windows workspace:
 
-- `python -m pytest -q`: **171 passed, 1 skipped**.
+- `python -m pytest -q`: **176 passed, 1 skipped** (one upstream Starlette warning).
 - `python -m pip check`: no broken requirements.
-- `python -m compileall -q backend tests`: passed.
+- `python -m compileall -q backend scripts tests`: passed.
 - The earlier Uvicorn smoke check on `127.0.0.1:8000` returned
   200, `/openapi.json` contained exactly ten API paths, and a GET to `/api/cities`
   plus a JSON POST to `/api/areas/test-area/simulate` both returned the expected
@@ -13,14 +13,16 @@ Checks run through 30 September 2026 on this Windows workspace:
   ten paths. The population route now references `PopulationResponse`, and a
   supplied zero-valued `population_exposure` score survives response validation.
 - Frontend validation passed `npm run lint` and `npm run build` with Next.js 16.3.4.
+  Lint reports one existing warning for the unused `Sparkles` import in
+  `components/landing/CTA.tsx`; there are no lint errors.
   Browser checks loaded `/` and `/explore` without an error overlay. With FastAPI
   running and no `DATABASE_URL`, `/explore` called `GET /api/cities`, received the
   expected 503, and displayed `The team database is not configured.`
-- A read-only check against the configured Supabase/Postgres database confirmed
+- The earlier read-only check against the configured Supabase/Postgres database confirmed
   PostGIS 3.3.7, all six expected tables/columns/constraints, and RLS enabled on
-  every table. The database currently contains only `karachi` and
-  `gulshan-e-iqbal` placeholder rows; both lack geometry and population, and all
-  grid/environment/risk/scenario tables are empty.
+  every table. At that time the database contained only `karachi` and
+  `gulshan-e-iqbal` placeholder rows; both lacked geometry and population, and all
+  grid/environment/risk/scenario tables were empty.
 - Live route checks against that configured database returned 200 for cities,
   Karachi areas, and the Gulshan area; 404 for missing city/area IDs; and the
   documented 503 unavailable responses for risk, population, all three layers,
@@ -28,6 +30,40 @@ Checks run through 30 September 2026 on this Windows workspace:
 - The configured database role owns all six tables and has `BYPASSRLS`. RLS is
   therefore not filtering this direct asyncpg connection; restricted production
   roles remain a manual deployment step.
+
+## Real Karachi ingestion checks
+
+The pipeline in `scripts/karachi_data_pipeline.py` successfully acquired and
+validated the real public sources documented in `data-ingestion.md`. It produced a
+Pydantic-valid atomic batch containing one sourced city, one sourced area, 210 valid
+WorldPop-native grid polygons, and 210 environmental records. Every grid cell has a
+2025 modelled population estimate; exactly one cell has the unaggregated CAMS Global
+PM2.5/PM10 timestep. All other environmental fields and all risk scores remain null
+or absent. The area population exactly equals the sum of stored cell values.
+
+The WorldPop GeoTIFF is single-band EPSG:4326 at 30 arc-seconds. Both approved EO4SD
+2017 ZIPs validate as EPSG:32642 shapefiles: 31,137 LULC polygons and 1,927 informal-
+settlement polygons. The LULC archive exposes seven original Level-2 classes. Neither
+archive is converted into a score or `green_percentage`. The questionable core LULC
+archive is not used.
+
+`python -m pip check` and `python -m compileall -q backend scripts tests` passed. Raw
+downloads remain ignored; the processed batch and provenance manifest are intended
+for source control.
+
+The first live import encountered a transient Supabase pooler SSL-negotiation timeout
+and stopped during the read-only pre-import ID check, before any write. After all
+three resolved pooler nodes recovered, the atomic import succeeded: the existing
+`karachi` and `gulshan-e-iqbal` bootstrap IDs were updated, and 210 grid plus 210
+environmental records were inserted. A precision-normalized rerun then updated those
+same stable IDs; it inserted no duplicates. PostGIS reports SRID 4326 and valid city,
+area, and grid geometry, with all 210 cells covered by the area and 0 m² outside.
+
+Live route checks after import returned 200 for cities, Karachi areas, the Gulshan
+area, and population. City and area geometry are present; population returns 210
+non-null cell values and the area total 2,144,041.503522. Heat, green, and flood still
+return the documented 503 `layer_unavailable`; risk returns 503
+`risk_not_configured`. These are correct missing-data states, not failed imports.
 
 The test suite covers route names, city/area lookups, empty datasets, missing
 records and measurements, supplied GeoJSON, preservation of null and zero, risk
@@ -79,12 +115,12 @@ against the configured team database, but transaction rollback and importer writ
 were not tested there. Docker Desktop is installed but its Linux daemon was not
 running, so the new portable backend image definition could not be built locally.
 
-Automated test fixtures remain explicitly synthetic; the separate live checks above
-used real public source responses without seeding the application. No real teammate
-processing adapter or AI provider was available or tested. Frontend TypeScript,
-lint, production build, and browser error-state handling were checked. A populated
-PostGIS database was unavailable, so live successful dashboard values could not be
-browser-tested. Scientific validation remains with Ayesha and Chip.
+Automated transport fixtures remain explicitly synthetic. The committed Karachi batch
+uses the separate real public sources documented above; no AI provider was available
+or tested. Frontend TypeScript, lint, production build, and browser error-state
+handling were checked. The real city, area, and population API responses were checked
+against PostGIS after import; populated browser rendering was not separately rerun.
+Scientific validation remains with Ayesha and Chip.
 
 The installed FastAPI/Starlette test client emitted one upstream deprecation
 warning about its HTTPX test-client import. It did not cause failures. The current

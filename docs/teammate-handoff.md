@@ -1,5 +1,12 @@
 # Connecting the team's work
 
+The first real Karachi ingestion pipeline is now documented in
+[`data-ingestion.md`](data-ingestion.md). It sources OSM administrative geometry,
+uses the catalog-verified WorldPop Pakistan 2025 constrained 1 km pixels as the grid,
+preserves one regional CAMS particulate timestep, and validates/imports through the
+existing `ProcessedBatch` interface. The approved EO4SD 2017 archives are acquired
+and documented but are not converted into green or risk values without owner methods.
+
 The team confirmed that Abd owns **external API requests and internal backend
 routes**, including request safety and passing raw responses to Arjun's pipeline.
 Arjun helps choose and understand the data and owns processing and AI logic with

@@ -40,6 +40,7 @@ FILE_ENDPOINTS = {
     "karachi_lulc_core_2017": "https://datacatalogfiles.worldbank.org/ddh-published/0041102/DR0051286/eo4sd_karachi_lulcvhr_2017.zip",
     "karachi_informal_2005": "https://datacatalogfiles.worldbank.org/ddh-published/0039832/1/DR0049550/eo4sd_karachi_informal_2005.zip",
     "karachi_informal_2017": "https://datacatalogfiles.worldbank.org/ddh-published/0039832/1/DR0049551/eo4sd_karachi_informal_2017.zip",
+    "worldpop_pak_2025_constrained_1km": "https://data.worldpop.org/GIS/Population/Global_2015_2030/R2025A/2025/PAK/v1/1km_ua/constrained/pak_pop_2025_CN_1km_R2025A_UA_v1.tif",
 }
 
 
@@ -219,6 +220,20 @@ class SourceHTTP:
 
     async def _download(self, source, url, destination, validate):
         temporary_path = None
+        if source.startswith("worldpop_"):
+            accept = "image/tiff, application/geotiff, application/octet-stream"
+            content_types = {
+                "image/tiff", "image/geotiff", "application/geotiff",
+                "application/octet-stream",
+            }
+            expected = "GeoTIFF"
+        else:
+            accept = "application/zip, application/octet-stream"
+            content_types = {
+                "application/zip", "application/x-zip-compressed",
+                "application/octet-stream",
+            }
+            expected = "ZIP"
         try:
             with tempfile.NamedTemporaryFile(
                 mode="wb", dir=destination.parent, prefix=f".{destination.name}.",
@@ -227,15 +242,13 @@ class SourceHTTP:
                 temporary_path = Path(output.name)
                 async with self.client.stream(
                     "GET", url,
-                    headers={"Accept": "application/zip, application/octet-stream"},
+                    headers={"Accept": accept},
                 ) as response:
                     self._check_status(response, source, url)
                     content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
-                    if content_type not in (
-                        "application/zip", "application/x-zip-compressed", "application/octet-stream",
-                    ):
+                    if content_type not in content_types:
                         raise SourceError(502, "invalid_source_response", source,
-                                          "Expected a ZIP file from the source.")
+                                          f"Expected a {expected} file from the source.")
                     if response.headers.get("content-encoding", "identity").lower() != "identity":
                         raise SourceError(502, "invalid_source_response", source,
                                           "Compressed HTTP encoding is unsupported for file downloads.")
@@ -263,7 +276,7 @@ class SourceHTTP:
                 validate(temporary_path)
             except (OSError, ValueError):
                 raise SourceError(502, "invalid_source_response", source,
-                                  "The source did not return a valid ZIP file.") from None
+                                  f"The source did not return a valid {expected} file.") from None
             if destination.exists():
                 raise FileExistsError(f"Refusing to overwrite existing file: {destination}")
             os.replace(temporary_path, destination)

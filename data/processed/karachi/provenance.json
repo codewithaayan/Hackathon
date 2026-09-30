@@ -1,0 +1,194 @@
+{
+  "scope": "UrbanPulse Karachi/Gulshan real-source ingestion",
+  "generated_at": "2026-09-30T16:48:00.119185+00:00",
+  "database_batch": "data/processed/karachi/processed.json",
+  "sources": {
+    "openstreetmap_boundaries": {
+      "api": "https://overpass-api.de/api/interpreter",
+      "license": "Open Database License (ODbL)",
+      "license_url": "https://www.openstreetmap.org/copyright",
+      "crs": "EPSG:4326",
+      "relations": [
+        {
+          "id": 6080948,
+          "name": "Karachi Division",
+          "admin_level": "5",
+          "wikidata": "Q8660",
+          "version": 42,
+          "timestamp": "2025-01-14T11:35:00Z",
+          "url": "https://www.openstreetmap.org/relation/6080948"
+        },
+        {
+          "id": 16350240,
+          "name": "Gulshan-e-Iqbal Town",
+          "admin_level": "7",
+          "wikidata": "Q5617890",
+          "version": 4,
+          "timestamp": "2024-07-08T09:15:43Z",
+          "url": "https://www.openstreetmap.org/relation/16350240"
+        }
+      ],
+      "limitations": "Community-maintained administrative boundaries; not an official cadastral product."
+    },
+    "worldpop_population": {
+      "catalog_dataset": "G2_CN_POP_R25A_1km",
+      "catalog_id": "78735",
+      "title": "Pakistan - Spatial Distribution of Population",
+      "source_url": "https://data.worldpop.org/GIS/Population/Global_2015_2030/R2025A/2025/PAK/v1/1km_ua/constrained/pak_pop_2025_CN_1km_R2025A_UA_v1.tif",
+      "doi": "10.5258/SOTON/WP00840",
+      "release_date": "2025-09-01",
+      "population_year": "2025",
+      "units": "people per source pixel",
+      "crs": "EPSG:4326",
+      "resolution": "30 arc-seconds (approximately 1 km at the equator)",
+      "sha256": "b14507273e202bee30465fd0a2913b71990504f3f1f2001cc28f7a703f7a6d2f",
+      "citation": "Bondarenko M., Priyatikanto R., Tejedor-Garavito N., Zhang W., McKeen T., Cunningham A., Woods T., Hilton J., Cihan D., Nosatiuk B., Brinkhoff T., Tatem A., Sorichetta A.. 2025 Constrained estimates of 2015-2030 total number of people per grid square at a resolution of 30 arc (approximately 1km at the equator) R2025A version v1. Global Demographic Data Project - Funded by The Bill and Melinda Gates Foundation (INV-045237). WorldPop - School of Geography and Environmental Science, University of Southampton. DOI:10.5258/SOTON/WP00840",
+      "license": "https://hub.worldpop.org/data/licence.txt",
+      "limitations": "Constrained Random-Forest dasymetric estimate; R2025A v1 alpha product, not a census count."
+    },
+    "open_meteo_cams_air_quality": {
+      "source_url": "https://air-quality-api.open-meteo.com/v1/air-quality",
+      "provider": "CAMS Global via Open-Meteo",
+      "domain": "cams_global",
+      "spatial_resolution": "0.4 degrees (approximately 45 km)",
+      "temporal_resolution": "hourly API output from 3-hourly CAMS Global model data",
+      "requested_coordinate": [
+        67.12333495295822,
+        24.929284872600412
+      ],
+      "returned_cams_coordinate": [
+        67.100006,
+        24.900002
+      ],
+      "grid_cell_id": "gulshan-e-iqbal-wp2025-r01462-c00747",
+      "timestamp": "2025-09-01T00:00:00Z",
+      "pm25": 18.6,
+      "pm10": 48.4,
+      "units": "μg/m³",
+      "limitations": "Regional model output at the returned CAMS grid point; not a monitor or street-level observation."
+    },
+    "eo4sd_lulc_peri_2017": {
+      "dataset_title": "Karachi (Pakistan) - Land Use/Land Cover (ESA EO4SD-Urban)",
+      "dataset_url": null,
+      "license": "Creative Commons Attribution 4.0",
+      "metadata_created": "2025-08-26T11:16:30.429527",
+      "metadata_modified": "2025-08-26T11:16:30.429531",
+      "resource_name": "Land Use/Land Cover 2017 Map for Karachi (peri-urban areas) (ESA EO4SD-Urban)",
+      "resource_format": "ZIP",
+      "resource_created": "2025-08-26T11:16:30.439037",
+      "resource_last_modified": null,
+      "resource_url": "https://datacatalogfiles.worldbank.org/ddh-published/0041102/DR0051284/eo4sd_karachi_lulchr_2017.zip",
+      "filename": "eo4sd_karachi_lulchr_2017.zip",
+      "sha256": "bd189513f962bc9b0cfad92be15637567da78eb54581b589fc2cfcad5854a9a2",
+      "bytes": 7757519,
+      "feature_count": 31137,
+      "geometry_type": "POLYGON",
+      "source_crs": "EPSG:32642",
+      "wgs84_bounds": [
+        66.6520206764291,
+        24.739875290219363,
+        67.5727944667025,
+        25.25193144269468
+      ],
+      "fields": [
+        "C_L2",
+        "N_L2",
+        "C_L1",
+        "N_L1",
+        "AREA",
+        "ID"
+      ],
+      "level_2_classes": [
+        {
+          "code": 11000,
+          "name": "Urban Fabric"
+        },
+        {
+          "code": 12000,
+          "name": "Industrial, Commercial, Public, Military, Private and Transport Units"
+        },
+        {
+          "code": 13000,
+          "name": "Mine, Dump and Construction Sites"
+        },
+        {
+          "code": 14000,
+          "name": "Artificial non-agricultural vegetated areas"
+        },
+        {
+          "code": 20000,
+          "name": "Agricultural Area"
+        },
+        {
+          "code": 32000,
+          "name": "Other Natural and Semi-natural Areas (Savannah, Grassland)"
+        },
+        {
+          "code": 51000,
+          "name": "Inland Water"
+        }
+      ],
+      "limitations": "Classes are retained but not collapsed into green_percentage without an approved class mapping."
+    },
+    "eo4sd_informal_2017": {
+      "dataset_title": "Karachi (Pakistan) - Informal Settlements (ESA EO4SD-Urban)",
+      "dataset_url": "",
+      "license": "Creative Commons Attribution 4.0",
+      "metadata_created": "2021-03-23T09:17:30.011996",
+      "metadata_modified": "2025-11-24T13:54:45.926664",
+      "resource_name": "Informal Settlements 2017 Map for Karachi (ESA EO4SD-Urban)",
+      "resource_format": "SHP ZIP",
+      "resource_created": "2020-01-14T10:15:00",
+      "resource_last_modified": "2020-01-14T13:10:00",
+      "resource_url": "https://datacatalogfiles.worldbank.org/ddh-published/0039832/1/DR0049551/eo4sd_karachi_informal_2017.zip",
+      "filename": "eo4sd_karachi_informal_2017.zip",
+      "sha256": "fb9c65a36741c00acc5ebda56ebc50a23e39637f9547feb3eb7be0e5ac4b7ba6",
+      "bytes": 203663,
+      "feature_count": 1927,
+      "geometry_type": "POLYGON",
+      "source_crs": "EPSG:32642",
+      "wgs84_bounds": [
+        66.9946419180484,
+        24.788129938066824,
+        67.23173813380035,
+        24.912940458627126
+      ],
+      "fields": [
+        "NB_LOCTYP",
+        "AREA",
+        "ID"
+      ],
+      "limitations": "No existing database field stores informal-settlement geometry; no vulnerability score was inferred."
+    }
+  },
+  "processing": {
+    "geometry": "OSM outer relation ways were polygonized, validated, oriented, and emitted as 2D EPSG:4326 GeoJSON.",
+    "grid": "Native WorldPop 30 arc-second pixels intersecting Gulshan-e-Iqbal were clipped to a 1 cm inward precision buffer of the sourced boundary so PostGIS containment is exact. Population fractions use the original, unbuffered boundary. IDs use immutable raster row/column indices.",
+    "population": "Boundary-cell people-per-pixel values were multiplied by the EPSG:32642 intersection-area fraction; this assumes population is uniform within each approximately 1 km source pixel.",
+    "air_quality": "One unaggregated 00:00 UTC CAMS model timestep was assigned only to the clipped WorldPop cell containing the provider-returned model coordinate.",
+    "risk": "No risk scores were generated because no approved Chip methodology is committed."
+  },
+  "record_counts": {
+    "cities": 1,
+    "areas": 1,
+    "grid_cells": 210,
+    "environmental_data": 210,
+    "risk_scores": 0
+  },
+  "environmental_fields": {
+    "populated": [
+      "population",
+      "pm25",
+      "pm10"
+    ],
+    "null": {
+      "temperature": "No approved historical heat source/product selection was processed.",
+      "ndvi": "Sentinel/Landsat scene, bands, cloud mask, and date remain scientifically unresolved.",
+      "rainfall": "IMERG product/version and rainfall processing method remain unresolved.",
+      "elevation": "No approved DEM product/file was available through the implemented clients.",
+      "slope": "Slope requires an approved DEM and method.",
+      "road_density": "OSM road selectors and density definition remain unresolved.",
+      "green_percentage": "EO4SD classes exist, but the class-to-green mapping is not approved."
+    }
+  }
+}
