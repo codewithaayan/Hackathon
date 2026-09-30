@@ -22,10 +22,14 @@ import tempfile
 import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
+import httpx
+import numpy as np
 import rasterio
 import shapefile
 from pyproj import CRS, Transformer
+from rasterio.mask import mask as raster_mask
 from rasterio.windows import Window, from_bounds
 from shapely import intersection
 from shapely.geometry import LineString, Point, box, mapping, shape
@@ -33,6 +37,7 @@ from shapely.geometry.polygon import orient
 from shapely.ops import polygonize, transform, unary_union
 
 from backend.config.settings import Settings
+from backend.calculations.risk_adapter import score_context
 from backend.database.connection import Database
 from backend.database.ingest import TABLE_MODELS, ProcessedBatch, import_processed
 from backend.services.air_quality import fetch_air_quality
@@ -79,6 +84,19 @@ WORLDPOP_TIMESTAMP = datetime(2025, 9, 1, tzinfo=timezone.utc)
 AIR_DATE = date(2025, 9, 1)
 AIR_TIME = "2025-09-01T00:00"
 AIR_RAW = RAW / "open-meteo" / "gulshan_cams_global_2025-09-01.json"
+
+LANDSAT_DATE = date(2025, 9, 5)
+LANDSAT_TIMESTAMP = datetime(2025, 9, 5, 5, 57, 19, 447116, tzinfo=timezone.utc)
+LANDSAT_ITEM_ID = "LC09_L2SP_152043_20250905_02_T1"
+LANDSAT_STAC = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
+LANDSAT_SIGN = "https://planetarycomputer.microsoft.com/api/sas/v1/sign"
+LANDSAT_ITEM_RAW = RAW / "landsat" / f"{LANDSAT_ITEM_ID}.json"
+LANDSAT_ASSETS = {
+    name: RAW / "landsat" / f"{LANDSAT_ITEM_ID}_{name}.tif"
+    for name in ("lwir11", "red", "nir08", "qa_pixel")
+}
+AIR_SNAPSHOT_TIME = "2025-09-05T06:00"
+AIR_SNAPSHOT_RAW = RAW / "open-meteo" / "gulshan_cams_global_2025-09-05.json"
 
 KARACHI_FILES = {
     "lulc_peri_2017": RAW / "karachi" / "eo4sd_karachi_lulchr_2017.zip",
@@ -312,6 +330,114 @@ async def acquire_sources() -> None:
                 ),
             ),
         )
+        await stored_response(
+            AIR_SNAPSHOT_RAW,
+            lambda: fetch_air_quality(
+                http,
+                AirQualityRequest(
+                    latitude=float(centroid.y),
+                    longitude=float(centroid.x),
+                    hourly=["pm2_5", "pm10"],
+                    start_date=LANDSAT_DATE,
+                    end_date=LANDSAT_DATE,
+                    domains="cams_global",
+                ),
+            ),
+        )
+    await acquire_landsat(area_geometry, settings)
+
+
+def _safe_landsat_href(href: str) -> None:
+    parsed = urlparse(href)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "landsateuwest.blob.core.windows.net"
+        or not parsed.path.startswith("/landsat-c2/level-2/standard/oli-tirs/2025/152/043/")
+    ):
+        raise ValueError("The selected Landsat asset is outside the approved public archive path.")
+
+
+def _clip_landsat_asset(href: str, destination: Path, area_geometry) -> None:
+    _safe_landsat_href(href)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with rasterio.Env(GDAL_HTTP_MAX_RETRY="2", GDAL_HTTP_RETRY_DELAY="1"):
+            with rasterio.open(href) as source:
+                if source.count != 1 or source.crs is None:
+                    raise ValueError("The Landsat asset is not a single georeferenced band.")
+                transformer = Transformer.from_crs("EPSG:4326", source.crs, always_xy=True)
+                clipped_geometry = transform(transformer.transform, area_geometry)
+                nodata = source.nodata
+                if destination == LANDSAT_ASSETS["qa_pixel"]:
+                    nodata = 1
+                elif nodata is None:
+                    nodata = 0
+                data, output_transform = raster_mask(
+                    source, [mapping(clipped_geometry)], crop=True, filled=True, nodata=nodata,
+                )
+                profile = source.profile.copy()
+                profile.update(
+                    height=data.shape[1], width=data.shape[2], transform=output_transform,
+                    nodata=nodata, compress="deflate",
+                )
+                with tempfile.NamedTemporaryFile(
+                    dir=destination.parent, prefix=f".{destination.name}.", suffix=".part", delete=False,
+                ) as output:
+                    temporary = Path(output.name)
+                with rasterio.open(temporary, "w", **profile) as output:
+                    output.write(data)
+        os.replace(temporary, destination)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+async def acquire_landsat(area_geometry, settings: Settings) -> None:
+    if LANDSAT_ITEM_RAW.exists() and all(path.exists() for path in LANDSAT_ASSETS.values()):
+        return
+    west, south, east, north = area_geometry.bounds
+    query = {
+        "collections": ["landsat-c2-l2"],
+        "bbox": [west, south, east, north],
+        "datetime": "2025-09-05T00:00:00Z/2025-09-05T23:59:59Z",
+        "limit": 20,
+    }
+    timeout = httpx.Timeout(settings.external_timeout_seconds, connect=5)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False) as client:
+        response = await client.post(LANDSAT_STAC, json=query, headers={"Accept": "application/geo+json"})
+        response.raise_for_status()
+        if len(response.content) > settings.external_max_response_bytes:
+            raise ValueError("The Landsat catalog response exceeds the configured size limit.")
+        payload = response.json()
+        matches = [item for item in payload.get("features", []) if item.get("id") == LANDSAT_ITEM_ID]
+        if len(matches) != 1:
+            raise ValueError("The approved Landsat scene is missing or duplicated in the public catalog.")
+        item = matches[0]
+        properties = item.get("properties", {})
+        if properties.get("datetime") != LANDSAT_TIMESTAMP.isoformat().replace("+00:00", "Z"):
+            raise ValueError("The approved Landsat acquisition timestamp changed.")
+        if properties.get("eo:cloud_cover") != 19.27:
+            raise ValueError("The approved Landsat scene cloud-cover metadata changed.")
+        assets = item.get("assets", {})
+        for name in LANDSAT_ASSETS:
+            href = assets.get(name, {}).get("href")
+            if not isinstance(href, str):
+                raise ValueError(f"The Landsat {name} asset is missing.")
+            _safe_landsat_href(href)
+        write_json(LANDSAT_ITEM_RAW, item)
+
+        for name, destination in LANDSAT_ASSETS.items():
+            if destination.exists():
+                continue
+            original = assets[name]["href"]
+            signed_response = await client.get(LANDSAT_SIGN, params={"href": original})
+            signed_response.raise_for_status()
+            signed = signed_response.json().get("href")
+            if not isinstance(signed, str) or urlparse(signed)._replace(query="").geturl() != original:
+                raise ValueError("The Landsat mirror returned an unexpected signed asset URL.")
+            await asyncio.to_thread(_clip_landsat_asset, signed, destination, area_geometry)
 
 
 def sha256(path: Path) -> str:
@@ -473,14 +599,16 @@ def build_population_grid(area_geometry, raster_path: Path):
     return grids, environment, float(round(total_population, 6))
 
 
-def attach_air_quality(area_geometry, grids: list[dict], environment: list[dict], payload: dict) -> dict:
+def attach_air_quality(
+    area_geometry, grids: list[dict], environment: list[dict], payload: dict, selected_time: str = AIR_TIME,
+) -> dict:
     units = payload.get("hourly_units", {})
     if units.get("pm2_5") != "μg/m³" or units.get("pm10") != "μg/m³":
         raise ValueError("Open-Meteo returned unexpected particulate units.")
     hourly = payload.get("hourly", {})
     times = hourly.get("time", [])
     try:
-        index = times.index(AIR_TIME)
+        index = times.index(selected_time)
     except ValueError:
         raise ValueError("Open-Meteo did not return the selected UTC timestep.") from None
     pm25 = hourly.get("pm2_5", [])[index]
@@ -507,11 +635,104 @@ def attach_air_quality(area_geometry, grids: list[dict], environment: list[dict]
         ],
         "returned_cams_coordinate": [longitude, latitude],
         "grid_cell_id": selected["id"],
-        "timestamp": AIR_TIME + ":00Z",
+        "timestamp": selected_time + ":00Z",
         "pm25": float(pm25),
         "pm10": float(pm10),
         "units": "μg/m³",
     }
+
+
+def build_landsat_environment(grids: list[dict], population_environment: list[dict]):
+    population = {row["grid_cell_id"]: row["population"] for row in population_environment}
+    datasets = {name: rasterio.open(path) for name, path in LANDSAT_ASSETS.items()}
+    try:
+        crs = datasets["lwir11"].crs
+        transform_to_scene = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+        for dataset in datasets.values():
+            if dataset.crs != crs or dataset.transform != datasets["lwir11"].transform:
+                raise ValueError("The Landsat bands are not co-registered.")
+        records = []
+        quality = {}
+        for grid in grids:
+            geometry = transform(transform_to_scene.transform, shape(grid["geometry"]))
+            bands = {
+                name: raster_mask(dataset, [mapping(geometry)], crop=True, filled=True,
+                                  nodata=dataset.nodata)[0][0]
+                for name, dataset in datasets.items()
+            }
+            qa = bands["qa_pixel"].astype(np.uint16)
+            non_fill = (qa & 1) == 0
+            cloud_bits = sum(1 << bit for bit in range(1, 6))
+            cloud = non_fill & ((qa & cloud_bits) != 0)
+            clear = non_fill & ~cloud
+            candidate_count = int(np.count_nonzero(non_fill))
+            valid_count = int(np.count_nonzero(clear))
+            valid_fraction = valid_count / candidate_count if candidate_count else 0.0
+            cloud_fraction = int(np.count_nonzero(cloud)) / candidate_count if candidate_count else 1.0
+
+            lst_dn = bands["lwir11"].astype(float)
+            lst_valid = clear & (lst_dn > 0)
+            temperature = None
+            if valid_fraction >= 0.35 and cloud_fraction <= 0.35 and np.any(lst_valid):
+                kelvin = lst_dn[lst_valid] * 0.00341802 + 149.0
+                temperature = float(np.mean(kelvin - 273.0))
+
+            red_dn = bands["red"].astype(float)
+            nir_dn = bands["nir08"].astype(float)
+            spectral_valid = clear & (red_dn > 0) & (nir_dn > 0)
+            ndvi = None
+            if valid_fraction >= 0.35 and cloud_fraction <= 0.35 and np.any(spectral_valid):
+                red = red_dn[spectral_valid] * 0.0000275 - 0.2
+                nir = nir_dn[spectral_valid] * 0.0000275 - 0.2
+                denominator = nir + red
+                usable = np.isfinite(denominator) & (np.abs(denominator) > 1e-9)
+                values = (nir[usable] - red[usable]) / denominator[usable]
+                values = values[np.isfinite(values)]
+                if values.size:
+                    ndvi = float(np.mean(np.clip(values, -1.0, 1.0)))
+
+            grid_id = grid["id"]
+            records.append({
+                "id": f"env-{grid_id}-20250905t055719z",
+                "grid_cell_id": grid_id,
+                "timestamp": LANDSAT_TIMESTAMP.isoformat().replace("+00:00", "Z"),
+                "temperature": temperature,
+                "ndvi": ndvi,
+                "population": population[grid_id],
+            })
+            quality[grid_id] = {
+                "candidate_pixels": candidate_count,
+                "valid_pixels": valid_count,
+                "valid_pixel_fraction": valid_fraction,
+                "cloud_fraction": cloud_fraction,
+            }
+        return records, quality
+    finally:
+        for dataset in datasets.values():
+            dataset.close()
+
+
+def build_risk_records(grids: list[dict], environment: list[dict]) -> list[dict]:
+    scored = score_context({"grid_cells": grids, "environmental_data": environment})
+    records = []
+    for row in scored:
+        component_values = [row.scores[name] for name in ("heat", "air", "flood", "green", "mobility",
+                                                          "population_exposure", "overall")]
+        if all(value is None for value in component_values):
+            continue
+        records.append({
+            "id": f"risk-{row.grid_cell_id}-20250905t055719z",
+            "grid_cell_id": row.grid_cell_id,
+            "timestamp": LANDSAT_TIMESTAMP.isoformat().replace("+00:00", "Z"),
+            "heat_score": row.scores["heat"],
+            "air_score": row.scores["air"],
+            "flood_score": row.scores["flood"],
+            "green_score": row.scores["green"],
+            "mobility_score": row.scores["mobility"],
+            "population_exposure_score": row.scores["population_exposure"],
+            "overall_score": row.scores["overall"],
+        })
+    return records
 
 
 def prepare_batch() -> dict:
@@ -520,6 +741,9 @@ def prepare_batch() -> dict:
         WORLDPOP_CATALOG_RAW,
         WORLDPOP_FILE,
         AIR_RAW,
+        AIR_SNAPSHOT_RAW,
+        LANDSAT_ITEM_RAW,
+        *LANDSAT_ASSETS.values(),
         *KARACHI_FILES.values(),
         *KARACHI_CATALOGS.values(),
     ]
@@ -543,6 +767,11 @@ def prepare_batch() -> dict:
     worldpop = select_worldpop_metadata(worldpop_catalog)
     grids, environment, area_population = build_population_grid(area_geometry, WORLDPOP_FILE)
     air = attach_air_quality(area_geometry, grids, environment, load_json(AIR_RAW))
+    snapshot_environment, landsat_quality = build_landsat_environment(grids, environment)
+    snapshot_air = attach_air_quality(
+        area_geometry, grids, snapshot_environment, load_json(AIR_SNAPSHOT_RAW), AIR_SNAPSHOT_TIME,
+    )
+    risk_scores = build_risk_records(grids, snapshot_environment)
 
     batch = ProcessedBatch.model_validate({
         "cities": [{
@@ -559,8 +788,8 @@ def prepare_batch() -> dict:
             "population": area_population,
         }],
         "grid_cells": grids,
-        "environmental_data": environment,
-        "risk_scores": [],
+        "environmental_data": environment + snapshot_environment,
+        "risk_scores": risk_scores,
     })
     write_json(BATCH_PATH, batch.model_dump(mode="json"))
 
@@ -631,6 +860,34 @@ def prepare_batch() -> dict:
                 **air,
                 "limitations": "Regional model output at the returned CAMS grid point; not a monitor or street-level observation.",
             },
+            "open_meteo_cams_air_quality_snapshot": {
+                "source_url": "https://air-quality-api.open-meteo.com/v1/air-quality",
+                "provider": "CAMS Global via Open-Meteo",
+                "domain": "cams_global",
+                "spatial_resolution": "0.4 degrees (approximately 45 km)",
+                "temporal_resolution": "hourly API output from 3-hourly CAMS Global model data",
+                **snapshot_air,
+                "limitations": "Regional model output at one returned CAMS grid point; not a monitor or street-level observation.",
+            },
+            "landsat_collection_2_level_2": {
+                "catalog": LANDSAT_STAC,
+                "mirror": "Microsoft Planetary Computer public Landsat Collection 2 archive",
+                "usgs_product_id": LANDSAT_ITEM_ID,
+                "acquired_at": LANDSAT_TIMESTAMP.isoformat(),
+                "scene_cloud_cover_percent": 19.27,
+                "bands": ["ST_B10", "SR_B4", "SR_B5", "QA_PIXEL"],
+                "surface_temperature_units": "degrees Celsius",
+                "ndvi_units": "unitless",
+                "quality_summary": {
+                    "cells": len(landsat_quality),
+                    "cells_with_temperature": sum(row["temperature"] is not None for row in snapshot_environment),
+                    "cells_with_ndvi": sum(row["ndvi"] is not None for row in snapshot_environment),
+                    "minimum_valid_pixel_fraction": min(item["valid_pixel_fraction"] for item in landsat_quality.values()),
+                    "maximum_cloud_fraction": max(item["cloud_fraction"] for item in landsat_quality.values()),
+                },
+                "processing": "QA_PIXEL fill, dilated-cloud, cirrus, cloud, shadow, and snow flags were excluded. USGS Collection 2 scale/offset values were applied before cell means and NDVI.",
+                "limitations": "A single 30 m Landsat overpass; cell means are not a temporal average.",
+            },
             "eo4sd_lulc_peri_2017": {
                 **lulc_catalog,
                 **lulc,
@@ -646,8 +903,9 @@ def prepare_batch() -> dict:
             "geometry": "OSM outer relation ways were polygonized, validated, oriented, and emitted as 2D EPSG:4326 GeoJSON.",
             "grid": "Native WorldPop 30 arc-second pixels intersecting Gulshan-e-Iqbal were clipped to a 1 cm inward precision buffer of the sourced boundary so PostGIS containment is exact. Population fractions use the original, unbuffered boundary. IDs use immutable raster row/column indices.",
             "population": "Boundary-cell people-per-pixel values were multiplied by the EPSG:32642 intersection-area fraction; this assumes population is uniform within each approximately 1 km source pixel.",
-            "air_quality": "One unaggregated 00:00 UTC CAMS model timestep was assigned only to the clipped WorldPop cell containing the provider-returned model coordinate.",
-            "risk": "No risk scores were generated because no approved Chip methodology is committed.",
+            "air_quality": "Each CAMS timestep was assigned only to the clipped WorldPop cell containing the provider-returned model coordinate.",
+            "landsat": "The 2025-09-05 Landsat 9 Collection 2 Level-2 scene was cloud-masked with QA_PIXEL. ST_B10 was scaled to Celsius; red/NIR reflectance was scaled before mean NDVI per project grid.",
+            "risk": "Chip's committed heat, green, air, flood, mobility, composite, and exposure modules generated only supported per-grid fields. Missing inputs remain null; no area aggregation was inferred.",
         },
         "record_counts": {
             "cities": len(batch.cities),
@@ -657,15 +915,13 @@ def prepare_batch() -> dict:
             "risk_scores": len(batch.risk_scores),
         },
         "environmental_fields": {
-            "populated": ["population", "pm25", "pm10"],
+            "populated": ["temperature", "ndvi", "population", "pm25", "pm10"],
             "null": {
-                "temperature": "No approved historical heat source/product selection was processed.",
-                "ndvi": "Sentinel/Landsat scene, bands, cloud mask, and date remain scientifically unresolved.",
                 "rainfall": "IMERG product/version and rainfall processing method remain unresolved.",
                 "elevation": "No approved DEM product/file was available through the implemented clients.",
                 "slope": "Slope requires an approved DEM and method.",
                 "road_density": "OSM road selectors and density definition remain unresolved.",
-                "green_percentage": "EO4SD classes exist, but the class-to-green mapping is not approved.",
+                "green_percentage": "NDVI is populated as Chip's approved green-model input; EO4SD classes are not collapsed into this separate field.",
             },
         },
     }

@@ -37,8 +37,8 @@ def create_app(settings: Settings | None = None, components: Components | None =
 
     app = FastAPI(
         title="UrbanPulse backend", version="0.1.0", lifespan=lifespan,
-        description="Abd's backend/API scope. Team data and scientific/AI adapters are not bundled. "
-                    "Transport choices and unresolved schemas are documented in docs/backend-contract.md.",
+        description="UrbanPulse backend with Chip's scientific risk and simulator adapters. "
+                    "Transport choices and remaining data/provider boundaries are documented in docs/backend-contract.md.",
     )
     app.state.settings = settings
     app.state.components = components

@@ -14,8 +14,8 @@ router = APIRouter(prefix="/api/areas", tags=["Simulator"])
 
 
 @router.post("/{area_id}/simulate", status_code=201, description=(
-    "Request fields, units and ranges await Arjun + Chip's schema. "
-    "Returns 503 until their adapter is configured. Results are modelled scenarios."
+    "Intervention fields are percentage-point changes validated by Chip's adapter. "
+    "Returns 503 when the scientific baseline or required inputs are unavailable. Results are modelled scenarios."
 ))
 async def simulate(area_id: AreaId, queries: Repository, request: Request, payload: dict = Body(...)):
     area = await queries.area(area_id)

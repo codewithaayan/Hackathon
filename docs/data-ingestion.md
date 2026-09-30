@@ -1,12 +1,12 @@
 # Karachi data ingestion
 
-This pipeline is limited to real, source-attributed records that fit the existing
-database contract. It does not calculate risk scores, infer unavailable measurements,
-or turn land-cover classes into environmental metrics without an approved method.
+This pipeline imports only real, source-attributed records that fit the existing
+database contract. It applies Chip's committed grid models where their inputs exist;
+it does not infer missing measurements, area aggregation, or land-cover meanings.
 
 ## Reproducible commands
 
-Install the data-processing tools separately from the production backend image:
+Install the data tools separately from the production backend image:
 
 ```text
 python -m pip install -r requirements-data.txt
@@ -14,96 +14,77 @@ python -m scripts.karachi_data_pipeline prepare
 python -m scripts.karachi_data_pipeline import
 ```
 
-`prepare` acquires any missing raw files, validates them, and writes
+`prepare` acquires missing public assets, validates them, and rewrites
 `data/processed/karachi/processed.json` plus `provenance.json`. Raw responses and
-downloads remain under ignored `data/raw/`; existing raw files are validated and
-reused rather than overwritten. `import` validates the committed JSON through
-`ProcessedBatch`, reports inserted versus updated IDs, and calls the existing atomic
-`import_processed()` helper. It never deletes records omitted from the batch.
-
-Public-source acquisition uses `Settings(_env_file=None)` and cannot read the database
-secret. Only the explicit import command loads `DATABASE_URL`; it never prints it.
+clipped source rasters stay in ignored `data/raw/`. `import` validates the entire
+`ProcessedBatch` and atomically upserts stable IDs without deleting omitted rows.
+Public acquisition uses `Settings(_env_file=None)` and cannot read the database
+secret. Only `import` loads `DATABASE_URL`, and it never prints it.
 
 ## Selected sources
 
-| Data | Exact resource | Source date | CRS / resolution | Units / use |
-| --- | --- | --- | --- | --- |
-| Karachi boundary | [OSM relation 6080948](https://www.openstreetmap.org/relation/6080948), version 42 | OSM edit timestamp 2025-01-14T11:35:00Z | EPSG:4326; vector administrative boundary | City geometry only |
-| Gulshan-e-Iqbal Town | [OSM relation 16350240](https://www.openstreetmap.org/relation/16350240), version 4 | OSM edit timestamp 2024-07-08T09:15:43Z | EPSG:4326; vector administrative boundary | Area geometry only |
-| Population | [WorldPop Pakistan 2025 constrained R2025A v1](https://data.worldpop.org/GIS/Population/Global_2015_2030/R2025A/2025/PAK/v1/1km_ua/constrained/pak_pop_2025_CN_1km_R2025A_UA_v1.tif), catalog ID 78735, DOI 10.5258/SOTON/WP00840 | Product/release date 2025-09-01; population year 2025 | EPSG:4326; 30 arc-seconds, approximately 1 km | Modelled people per source pixel |
-| PM2.5 / PM10 | [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api), CAMS Global domain | 2025-09-01T00:00:00Z model timestep | Returned CAMS point 24.900002N, 67.100006E; 0.4 degrees, approximately 45 km | µg/m³; one regional model point, not a street-level monitor |
-| Peri-urban land cover | [EO4SD Karachi LULC 2017](https://datacatalogfiles.worldbank.org/ddh-published/0041102/DR0051284/eo4sd_karachi_lulchr_2017.zip) | Resource labelled 2017; current EnergyData catalog metadata captured in `provenance.json` | EPSG:32642; 31,137 source polygons | Seven original Level-2 class names/codes retained for review |
-| Informal settlements | [EO4SD Karachi Informal Settlements 2017](https://datacatalogfiles.worldbank.org/ddh-published/0039832/1/DR0049551/eo4sd_karachi_informal_2017.zip) | Resource labelled 2017 | EPSG:32642; 1,927 source polygons | Source geometry retained for review, not converted to vulnerability |
+| Data | Exact resource | Date / resolution | Use |
+| --- | --- | --- | --- |
+| Karachi boundary | [OSM relation 6080948](https://www.openstreetmap.org/relation/6080948), version 42 | 2025-01-14; EPSG:4326 vector | City geometry |
+| Gulshan-e-Iqbal | [OSM relation 16350240](https://www.openstreetmap.org/relation/16350240), version 4 | 2024-07-08; EPSG:4326 vector | Area geometry |
+| Population | [WorldPop Pakistan 2025 constrained R2025A v1](https://data.worldpop.org/GIS/Population/Global_2015_2030/R2025A/2025/PAK/v1/1km_ua/constrained/pak_pop_2025_CN_1km_R2025A_UA_v1.tif), DOI 10.5258/SOTON/WP00840 | 2025 model; 30 arc-seconds | Modelled people per source pixel |
+| LST / NDVI | USGS Landsat 9 Collection 2 Level-2 product `LC09_L2SP_152043_20250905_02_T1`, through the public Planetary Computer mirror | 2025-09-05; 30 m | QA-masked cell-mean Celsius LST and unitless NDVI |
+| PM2.5 / PM10 | [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api), CAMS Global | 2025-09-01 00:00 and 2025-09-05 06:00 UTC; 0.4 degrees | Regional model values in one containing cell per timestep |
+| Peri-urban land cover | [EO4SD Karachi LULC 2017](https://datacatalogfiles.worldbank.org/ddh-published/0041102/DR0051284/eo4sd_karachi_lulchr_2017.zip) | 2017; EPSG:32642 vector | Original seven Level-2 classes retained, not reclassified |
+| Informal settlements | [EO4SD Karachi Informal Settlements 2017](https://datacatalogfiles.worldbank.org/ddh-published/0039832/1/DR0049551/eo4sd_karachi_informal_2017.zip) | 2017; EPSG:32642 vector | Retained for review, not converted to vulnerability |
 
-OpenStreetMap is community-maintained and is not represented as an official cadastral
-boundary. WorldPop is an alpha, constrained Random-Forest dasymetric estimate rather
-than a census count. The CAMS value is regional model output. The two EO4SD archives
-are CC BY 4.0; their source classes are not risk or green scores.
+OSM is community-maintained, WorldPop is a modelled dasymetric estimate rather than
+a census count, CAMS is regional model output rather than a street monitor, and the
+Landsat data is one overpass rather than a temporal average. The questionable archive
+published as 2017 *core* LULC is not used because its internal filenames say 2005.
 
-The questionable archive published as 2017 **core** LULC is not downloaded or used by
-this pipeline. Its internal 2005 filenames remain an unresolved source discrepancy.
+## Processing
 
-## Geometry and grid processing
+The OSM relations are polygonized, oriented and validated. The analysis grid uses
+WorldPop's native cells clipped to the Gulshan boundary, with stable raster-row/column
+IDs. Population for a boundary cell is multiplied by its EPSG:32642 intersection-area
+fraction. The stored area population is the exact sum of stored cell values.
 
-The OSM relation outer ways are polygonized, oriented, and checked for valid 2D
-geometry. Gulshan-e-Iqbal is verified to be covered by the sourced Karachi Division
-boundary before processing.
+Each CAMS request uses the sourced area centroid. Its unaggregated value is retained
+only in the grid containing the provider-returned point and is never copied over the
+1 km project grid.
 
-The analysis grid uses the selected WorldPop raster's native 30 arc-second pixels, so
-no arbitrary grid resolution is introduced. Each intersecting pixel is clipped to the
-Gulshan boundary. IDs encode the immutable source raster row and column, for example
-`gulshan-e-iqbal-wp2025-r01462-c00747`. Grid geometry is emitted in EPSG:4326 and
-centroids are calculated after projecting the clipped polygon to EPSG:32642. Stored
-grid geometry uses a 1 cm inward precision buffer of the sourced boundary so PostGIS
-can verify exact containment across geometry-engine precision models; population
-allocation continues to use the original unbuffered boundary.
+For Landsat, `QA_PIXEL` fill, dilated cloud, cirrus, cloud, shadow and snow flags are
+excluded. Cells below Chip's 35% valid-pixel threshold or above its 35% cloud threshold
+stay null. The official Collection 2 scale/offset converts `ST_B10` to Celsius. Scaled
+red and NIR surface reflectance produce NDVI before each grid-cell mean. Temporary
+signed mirror URLs are neither committed nor copied into provenance.
 
-For a boundary pixel, the source population count is multiplied by the fraction of its
-area inside Gulshan, calculated in EPSG:32642. This assumes population is uniform inside
-that approximately 1 km source pixel; it does not turn the modelled estimate into a
-census count. The stored area population is the exact sum of stored cell values.
+Chip's heat, green, air, flood, mobility, composite and exposure functions then run
+against the aligned snapshot. A component score is stored only when at least one of
+that model's weighted inputs is present. Composite, exposure and overall remain null
+unless all five component dimensions and population are available.
 
-The CAMS request uses the sourced Gulshan polygon centroid. Open-Meteo returned the
-nearest CAMS grid coordinate shown above. Only the unaggregated 00:00 UTC timestep is
-stored, and only in the analysis cell containing that returned coordinate. It is not
-copied across the 1 km grid.
-
-## Current processed batch
+## Current processed and live data
 
 | Table | Records | Contents |
 | --- | ---: | --- |
 | `cities` | 1 | `karachi`, with sourced OSM geometry |
-| `areas` | 1 | `gulshan-e-iqbal`, sourced OSM geometry and modelled 2025 population total |
-| `grid_cells` | 210 | Valid clipped WorldPop-native cells with stable IDs and centroids |
-| `environmental_data` | 210 | Population in every cell; PM2.5/PM10 in one CAMS-containing cell |
-| `risk_scores` | 0 | No approved Chip methodology is committed |
+| `areas` | 1 | `gulshan-e-iqbal`, sourced geometry and 2025 modelled population |
+| `grid_cells` | 210 | Valid WorldPop-native cells with stable IDs |
+| `environmental_data` | 420 | Two dated snapshots; 57 QA-valid LST/NDVI cells, population in all cells, and one CAMS cell per snapshot |
+| `risk_scores` | 210 | 57 heat, 57 green, one air and 210 population-supported mobility scores |
 
-The imported area total is **2,144,041.503522 modelled people**. The initial live
-import updated the two existing bootstrap IDs and inserted 210 grid plus 210
-environmental records. A validation rerun updated those same stable IDs and inserted
-no duplicates. PostGIS confirms SRID 4326, valid geometry, and zero grid cells outside
-the area boundary.
+The live import upserted the existing city, area, grid and first snapshot; inserted the
+second 210 environmental records and 210 partial risk rows; and deleted nothing.
+PostGIS continues to report valid EPSG:4326 geometry with every grid covered by the
+area. Exact checksums, catalog metadata, quality summaries, processing decisions and
+limitations are in `data/processed/karachi/provenance.json`.
 
-`temperature`, `ndvi`, `rainfall`, `elevation`, `slope`, `road_density`, and
-`green_percentage` remain null. Their source/product or feature definition is not yet
-approved. In particular, the EO4SD class labels are preserved but not silently mapped
-to `green_percentage`, and informal-settlement polygons are not converted into risk.
+## Remaining data/scientific boundaries
 
-The exact checksums, class list, source bounds, source metadata, processing decisions,
-limitations, field availability, and record counts are machine-readable in
-`data/processed/karachi/provenance.json`.
-
-## Remaining scientific decisions
-
-- Chip must supply the approved risk-score formulas, weights, thresholds, aggregation,
-  and required time alignment before `risk_scores` can be populated.
-- The team must approve Landsat/Sentinel scenes, bands, cloud handling, and dates for
-  temperature/NDVI.
-- The team must choose the IMERG product/version and rainfall transformation.
-- The team must choose a DEM product and slope method.
-- OSM road selectors and the road-density denominator need agreement.
-- EO4SD Level-2 classes need an approved definition of what contributes to
-  `green_percentage`.
-- The schema has no durable provenance columns or informal-settlement table; the
-  committed provenance file remains the source record unless the database contract is
-  intentionally extended.
+- Chip's grid methodology is implemented, but no committed method says how 210 grid
+  scores become the existing area-level `RiskResult`. The adapter does not invent a
+  mean or population-weighted aggregation.
+- IMERG product/version and rainfall transformation remain unresolved.
+- A DEM product, access path and slope method remain unresolved.
+- OSM road selectors and the road-density denominator remain unresolved.
+- Imperviousness, water distance and optional TWI have no current persisted fields.
+- EO4SD classes have no approved mapping to `green_percentage`.
+- The schema has no durable provenance/confidence columns; the committed provenance
+  file remains the source record unless the database contract is intentionally changed.

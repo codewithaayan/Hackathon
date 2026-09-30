@@ -63,7 +63,7 @@ def simscenario(
     )
 
     projected_heat = clamp(
-        max(baseline.heat - heat_reduction, sim.floor_score)
+        max(baseline.heat - heat_reduction, min(sim.floor_score, baseline.heat))
     )
 
     flood_reduction = (
@@ -73,7 +73,7 @@ def simscenario(
     )
 
     projected_flood = clamp(
-        max(baseline.flood - flood_reduction, sim.floor_score)
+        max(baseline.flood - flood_reduction, min(sim.floor_score, baseline.flood))
     )
 
     air_reduction = (
@@ -83,7 +83,7 @@ def simscenario(
     )
 
     projected_air = clamp(
-        max(baseline.air - air_reduction, sim.floor_score)
+        max(baseline.air - air_reduction, min(sim.floor_score, baseline.air))
     )
 
     mobility_reduction = (
@@ -92,7 +92,7 @@ def simscenario(
     )
 
     projected_mobility = clamp(
-        max(baseline.mobility - mobility_reduction, sim.floor_score)
+        max(baseline.mobility - mobility_reduction, min(sim.floor_score, baseline.mobility))
     )
 
     projected_environmental_risk =environment_risks(
@@ -220,7 +220,7 @@ def simscenario_mc(
 
     projected_heat = np.clip(
         baseline.heat - heat_reduction,
-        sim.floor_score,
+        min(sim.floor_score, baseline.heat),
         100.0,
     )
 
@@ -232,7 +232,7 @@ def simscenario_mc(
 
     projected_flood = np.clip(
         baseline.flood - flood_reduction,
-        sim.floor_score,
+        min(sim.floor_score, baseline.flood),
         100.0,
     )
 
@@ -244,7 +244,7 @@ def simscenario_mc(
 
     projected_air = np.clip(
         baseline.air - air_reduction,
-        sim.floor_score,
+        min(sim.floor_score, baseline.air),
         100.0,
     )
 
@@ -255,7 +255,7 @@ def simscenario_mc(
 
     projected_mobility = np.clip(
         baseline.mobility - mobility_reduction,
-        sim.floor_score,
+        min(sim.floor_score, baseline.mobility),
         100.0,
     )
 

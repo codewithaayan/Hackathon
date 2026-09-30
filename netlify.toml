@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NEXT_PUBLIC_API_BASE_URL = "https://scenic-simultaneously-tower-genome.trycloudflare.com"
+
+[context.production.environment]
+  NEXT_PUBLIC_API_BASE_URL = "https://scenic-simultaneously-tower-genome.trycloudflare.com"

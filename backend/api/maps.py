@@ -8,9 +8,9 @@ from backend.models.layer import MapLayer
 router = APIRouter(prefix="/api/areas", tags=["Map layers"])
 
 LAYER_FIELDS = {
-    "heat": (("temperature",), "heat_score"),
-    "green": (("ndvi", "green_percentage"), "green_score"),
-    "flood": (("rainfall", "elevation", "slope"), "flood_score"),
+    "heat": (("temperature",), "heat_score", "all"),
+    "green": (("ndvi", "green_percentage"), "green_score", "any"),
+    "flood": (("rainfall", "elevation", "slope"), "flood_score", "all"),
 }
 
 
@@ -30,7 +30,7 @@ async def map_layer(area_id, layer, queries, request):
     grids = await queries.grids(area_id)
     environment = {row["grid_cell_id"]: row for row in await queries.environmental(area_id)}
     risks = {row["grid_cell_id"]: row for row in await queries.risks(area_id)}
-    fields, score_field = LAYER_FIELDS[layer]
+    fields, score_field, measurement_requirement = LAYER_FIELDS[layer]
     features, incomplete = [], []
     has_values = False
     for grid in grids:
@@ -39,7 +39,13 @@ async def map_layer(area_id, layer, queries, request):
         values = {field: measurement.get(field) for field in fields}
         values[score_field] = score.get(score_field)
         has_values = has_values or any(value is not None for value in values.values())
-        if grid["geometry"] is None or any(value is None for value in values.values()):
+        supplied_measurements = [values[field] is not None for field in fields]
+        measurements_incomplete = (
+            not any(supplied_measurements)
+            if measurement_requirement == "any"
+            else not all(supplied_measurements)
+        )
+        if grid["geometry"] is None or measurements_incomplete or values[score_field] is None:
             incomplete.append(grid["id"])
         features.append({
             "type": "Feature",

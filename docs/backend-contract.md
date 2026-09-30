@@ -26,7 +26,9 @@ These small technical choices were needed because the project folder was empty:
   IDs are `text`. Records must keep stable IDs for repeat imports.
 - Names and foreign keys are required. Measurements are nullable finite numbers,
   stored as `double precision`. Fractional population estimates can be preserved.
-  No units, score ranges, weights or thresholds are assigned by the backend.
+  Chip's committed model/config modules now define score behavior. Integrated field
+  units are LST Celsius, unitless NDVI, PM in micrograms per cubic metre, rainfall in
+  mm/hour, elevation in metres and slope in degrees.
 - Source timestamps use timezone-aware datetimes (`timestamptz`). The current read
   policy is the latest **whole record per grid cell**, separately for environmental
   data and risk scores. No older non-null values are carried forward. This is a
@@ -64,7 +66,7 @@ IDs are path parameters. No query parameters or extra product routes were added.
 | `GET /api/areas/{area_id}/layers/green` | GeoJSON FeatureCollection described below | No supplied green values: 503 |
 | `GET /api/areas/{area_id}/layers/flood` | GeoJSON FeatureCollection described below | No supplied flood inputs or scores: 503 |
 | `GET /api/areas/{area_id}/population` | `area`, `exposure`, `grid_population`, `metadata` | No area or grid population values: 503 |
-| `POST /api/areas/{area_id}/simulate` | 201: `label`, `scenario`, `result` | Missing simulator/schema or model inputs: 503 |
+| `POST /api/areas/{area_id}/simulate` | 201: `label`, `scenario`, `result` | Missing complete baseline, aggregation, or intervention input: 503 |
 | `POST /api/areas/{area_id}/ai-analysis` | `area`, `risk`, `analysis` | Missing AI/schema/risk adapter or data: 503 |
 
 All successful reads use status 200. All area routes return 404 for an unknown area
@@ -94,8 +96,8 @@ frontend joins these responses by stable area ID:
 | Dashboard scores and exposure | `GET /api/areas/{area_id}/risk` |
 | Population cells | `GET /api/areas/{area_id}/population` |
 | Heat, green and flood map data | The three documented layer GETs |
-| Intervention submission | `POST /api/areas/{area_id}/simulate` after owner schema agreement |
-| AI question | `POST /api/areas/{area_id}/ai-analysis` after Arjun's schema agreement |
+| Intervention submission | `POST /api/areas/{area_id}/simulate` using the percentage-point schema below |
+| AI question | `POST /api/areas/{area_id}/ai-analysis` after a grounded provider is configured |
 
 Backend JSON uses `snake_case`. The TypeScript types use `camelCase`, so `lib/api.ts`
 maps names explicitly, for example
@@ -131,8 +133,10 @@ missing scores are never replaced with zero. `exposure` numbers may be null.
 `data_sources` is a supplied list of source names or null. Unknown metadata is not
 filled from the example in the blueprint. Source freshness is for the team to assess.
 
-The backend reads grid inputs, calls Chip's adapter and validates the result. It
-does not average grid scores or decide how many people are at high risk.
+The backend reads grid inputs, calls Chip's adapter and validates the result. The
+adapter applies Chip's heat, green, air, flood, mobility, composite and exposure
+modules. It refuses a multi-cell area result because the committed scientific code
+defines grid scoring but no area aggregation method.
 
 ### Map layers
 
@@ -180,24 +184,30 @@ choose an exposure threshold or manufacture an area update time. For modelled
 high-risk population, use the connected risk endpoint. Zero is a present value;
 null is missing data.
 
-### POST contracts still awaiting owners
+### POST contracts
 
-Both POSTs require `Content-Type: application/json` and a JSON object. The blueprint
-does **not** specify their fields, units or ranges. There are no guessed sliders,
-default interventions, questions or prompts here. Until adapters are registered,
-`{}` can be used to check unavailable behaviour, but is not an agreed valid request.
+Both POSTs require `Content-Type: application/json` and a JSON object. The simulator
+request follows Chip's `scenarioinput`: `tree_change_pp`, `cool_roof_change_pp`,
+`drainage_change_pp`, `traffic_reduction_pp`, and `green_corridor_pp`. Each is a
+strict number from 0 through 100 percentage points and defaults to 0. Extra fields
+are rejected. The adapter runs Chip's 1,000-iteration seeded uncertainty model.
 
 Once registered, the supplied request model validates all requests before the
 adapter runs. Arjun/Chip must share those models with Phantom; default OpenAPI shows
 an object and marks the contract unresolved, rather than publishing invented fields.
 
-The removed frontend mock proposed simulator inputs named `treeCoverage`,
-`coolRoofs`, `drainage`, `trafficReduction`, and `greenCorridors`, and an AI response
-with `primaryIssue`, `whyItMatters`, `evidence`, `recommendedActions`, and
-`scientificNote`. These are useful interface proposals, but their units, ranges,
-meaning and mappings have not been approved by Arjun/Chip. They are not copied into
-backend models until those owners confirm them. The mock simulator coefficients and
-fixed AI answers are demonstration code and are never executed by the backend.
+The removed frontend mock coefficients and fixed AI answers remain deleted. The
+simulator uses only Chip's committed coefficient config. Its response includes the
+scenario storage mapping, baseline, projected values, deltas, assumptions, modelled
+label, confidence and uncertainty. Cool-roof or drainage changes return unavailable
+until measured imperviousness is supplied; Chip's `0.5` dataclass default is not used
+as a fabricated measurement.
+
+The strict AI request is `{question: string}`. Its response is `{answer, evidence,
+limitations}`; each evidence item references a structured `scores.*` or `exposure.*`
+field. `build_ai_component()` injects a provider with only that validated question
+and `RiskResponse`. No provider is selected, so the team factory does not register
+AI and the live route returns `ai_not_configured`.
 
 Simulation's owner response schema must contain `scenario`, with all eight
 `ScenarioValues` fields in `backend/models/scenario.py`. These are exactly the

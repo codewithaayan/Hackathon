@@ -39,7 +39,7 @@ class Exposure(Record):
 
 
 class RiskResult(Record):
-    """Transport shape based on the blueprint example, pending team agreement."""
+    """Validated area-risk transport shape used by team adapters."""
 
     scores: Scores
     exposure: Exposure

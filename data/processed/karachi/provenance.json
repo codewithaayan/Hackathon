@@ -1,6 +1,6 @@
 {
   "scope": "UrbanPulse Karachi/Gulshan real-source ingestion",
-  "generated_at": "2026-09-30T16:48:00.119185+00:00",
+  "generated_at": "2026-09-30T17:19:18.679390+00:00",
   "database_batch": "data/processed/karachi/processed.json",
   "sources": {
     "openstreetmap_boundaries": {
@@ -66,6 +66,51 @@
       "pm10": 48.4,
       "units": "μg/m³",
       "limitations": "Regional model output at the returned CAMS grid point; not a monitor or street-level observation."
+    },
+    "open_meteo_cams_air_quality_snapshot": {
+      "source_url": "https://air-quality-api.open-meteo.com/v1/air-quality",
+      "provider": "CAMS Global via Open-Meteo",
+      "domain": "cams_global",
+      "spatial_resolution": "0.4 degrees (approximately 45 km)",
+      "temporal_resolution": "hourly API output from 3-hourly CAMS Global model data",
+      "requested_coordinate": [
+        67.12333495295822,
+        24.929284872600412
+      ],
+      "returned_cams_coordinate": [
+        67.100006,
+        24.900002
+      ],
+      "grid_cell_id": "gulshan-e-iqbal-wp2025-r01462-c00747",
+      "timestamp": "2025-09-05T06:00:00Z",
+      "pm25": 31.0,
+      "pm10": 68.7,
+      "units": "μg/m³",
+      "limitations": "Regional model output at one returned CAMS grid point; not a monitor or street-level observation."
+    },
+    "landsat_collection_2_level_2": {
+      "catalog": "https://planetarycomputer.microsoft.com/api/stac/v1/search",
+      "mirror": "Microsoft Planetary Computer public Landsat Collection 2 archive",
+      "usgs_product_id": "LC09_L2SP_152043_20250905_02_T1",
+      "acquired_at": "2025-09-05T05:57:19.447116+00:00",
+      "scene_cloud_cover_percent": 19.27,
+      "bands": [
+        "ST_B10",
+        "SR_B4",
+        "SR_B5",
+        "QA_PIXEL"
+      ],
+      "surface_temperature_units": "degrees Celsius",
+      "ndvi_units": "unitless",
+      "quality_summary": {
+        "cells": 210,
+        "cells_with_temperature": 57,
+        "cells_with_ndvi": 57,
+        "minimum_valid_pixel_fraction": 0.0,
+        "maximum_cloud_fraction": 1.0
+      },
+      "processing": "QA_PIXEL fill, dilated-cloud, cirrus, cloud, shadow, and snow flags were excluded. USGS Collection 2 scale/offset values were applied before cell means and NDVI.",
+      "limitations": "A single 30 m Landsat overpass; cell means are not a temporal average."
     },
     "eo4sd_lulc_peri_2017": {
       "dataset_title": "Karachi (Pakistan) - Land Use/Land Cover (ESA EO4SD-Urban)",
@@ -165,30 +210,31 @@
     "geometry": "OSM outer relation ways were polygonized, validated, oriented, and emitted as 2D EPSG:4326 GeoJSON.",
     "grid": "Native WorldPop 30 arc-second pixels intersecting Gulshan-e-Iqbal were clipped to a 1 cm inward precision buffer of the sourced boundary so PostGIS containment is exact. Population fractions use the original, unbuffered boundary. IDs use immutable raster row/column indices.",
     "population": "Boundary-cell people-per-pixel values were multiplied by the EPSG:32642 intersection-area fraction; this assumes population is uniform within each approximately 1 km source pixel.",
-    "air_quality": "One unaggregated 00:00 UTC CAMS model timestep was assigned only to the clipped WorldPop cell containing the provider-returned model coordinate.",
-    "risk": "No risk scores were generated because no approved Chip methodology is committed."
+    "air_quality": "Each CAMS timestep was assigned only to the clipped WorldPop cell containing the provider-returned model coordinate.",
+    "landsat": "The 2025-09-05 Landsat 9 Collection 2 Level-2 scene was cloud-masked with QA_PIXEL. ST_B10 was scaled to Celsius; red/NIR reflectance was scaled before mean NDVI per project grid.",
+    "risk": "Chip's committed heat, green, air, flood, mobility, composite, and exposure modules generated only supported per-grid fields. Missing inputs remain null; no area aggregation was inferred."
   },
   "record_counts": {
     "cities": 1,
     "areas": 1,
     "grid_cells": 210,
-    "environmental_data": 210,
-    "risk_scores": 0
+    "environmental_data": 420,
+    "risk_scores": 210
   },
   "environmental_fields": {
     "populated": [
+      "temperature",
+      "ndvi",
       "population",
       "pm25",
       "pm10"
     ],
     "null": {
-      "temperature": "No approved historical heat source/product selection was processed.",
-      "ndvi": "Sentinel/Landsat scene, bands, cloud mask, and date remain scientifically unresolved.",
       "rainfall": "IMERG product/version and rainfall processing method remain unresolved.",
       "elevation": "No approved DEM product/file was available through the implemented clients.",
       "slope": "Slope requires an approved DEM and method.",
       "road_density": "OSM road selectors and density definition remain unresolved.",
-      "green_percentage": "EO4SD classes exist, but the class-to-green mapping is not approved."
+      "green_percentage": "NDVI is populated as Chip's approved green-model input; EO4SD classes are not collapsed into this separate field."
     }
   }
 }
