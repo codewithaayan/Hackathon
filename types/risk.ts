@@ -37,6 +37,7 @@ export interface PopulationResponse {
 
 export interface MapFeature {
   type: "Feature";
+  id?: string | number | null;
   geometry: GeoJSONGeometry | null;
   properties: Record<string, unknown> | null;
 }

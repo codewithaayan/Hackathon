@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy as np
-from .configs import engineconfig
+from backend.config.configs import engineconfig
 from .domain import basestats, scenarioinput, scenario_output
 
 

@@ -105,6 +105,13 @@ individual fields. It never deletes missing records. Use stable IDs, especially
 when updating an existing cell/timestamp. Scientific calculations must already
 have been performed by their owners before loading `risk_scores`.
 
+The current database contains placeholder rows with IDs `karachi` and
+`gulshan-e-iqbal`. They have no geometry or measurements. A real batch using those
+same stable IDs replaces the placeholder names, geometry and population atomically.
+The importer deliberately does not merge records by display name: if the team
+chooses different IDs, remove or rename the placeholders explicitly after reviewing
+foreign keys, rather than guessing that similarly named places are identical.
+
 Usage from the owner's code, with a real processed payload:
 
 ```python
@@ -130,6 +137,12 @@ limitations must be documented by Arjun/Ayesha before the frontend presents it.
 Use a separate ingestion database role with write access to those five tables.
 The API role needs SELECT on those tables and INSERT on `scenarios`; it does not
 need schema creation or general data-editing privileges.
+
+The currently configured Supabase/Postgres role owns the tables and has
+`BYPASSRLS`, so RLS does not filter its direct asyncpg queries even though RLS is
+enabled. Create restricted, non-owner roles before production. RLS policies are
+only necessary if those restricted roles should rely on row-level filtering;
+server-side grants are still required. Do not add a Supabase client solely for RLS.
 
 The original `weather_data`, `air_quality_data`, `satellite_data` and
 `population_data` helpers still project processed records for the existing routes.

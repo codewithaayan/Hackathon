@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy as np
-from .configs import mobileconfig, normalizeconfig
+from backend.config.configs import mobileconfig, normalizeconfig
 from .normalize import badhighvalue, weighted_avg
 
 

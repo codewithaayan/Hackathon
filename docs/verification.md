@@ -1,8 +1,8 @@
 # Verification record
 
-Checks run through 22 September 2026 on this Windows workspace:
+Checks run through 30 September 2026 on this Windows workspace:
 
-- `python -m pytest -q -p no:cacheprovider`: **157 passed, 1 skipped**.
+- `python -m pytest -q`: **171 passed, 1 skipped**.
 - `python -m pip check`: no broken requirements.
 - `python -m compileall -q backend tests`: passed.
 - The earlier Uvicorn smoke check on `127.0.0.1:8000` returned
@@ -16,6 +16,18 @@ Checks run through 22 September 2026 on this Windows workspace:
   Browser checks loaded `/` and `/explore` without an error overlay. With FastAPI
   running and no `DATABASE_URL`, `/explore` called `GET /api/cities`, received the
   expected 503, and displayed `The team database is not configured.`
+- A read-only check against the configured Supabase/Postgres database confirmed
+  PostGIS 3.3.7, all six expected tables/columns/constraints, and RLS enabled on
+  every table. The database currently contains only `karachi` and
+  `gulshan-e-iqbal` placeholder rows; both lack geometry and population, and all
+  grid/environment/risk/scenario tables are empty.
+- Live route checks against that configured database returned 200 for cities,
+  Karachi areas, and the Gulshan area; 404 for missing city/area IDs; and the
+  documented 503 unavailable responses for risk, population, all three layers,
+  simulation, and AI. No database writes were made during these checks.
+- The configured database role owns all six tables and has `BYPASSRLS`. RLS is
+  therefore not filtering this direct asyncpg connection; restricted production
+  roles remain a manual deployment step.
 
 The test suite covers route names, city/area lookups, empty datasets, missing
 records and measurements, supplied GeoJSON, preservation of null and zero, risk
@@ -61,11 +73,11 @@ ZIP instead contains components named `EO4SD_KARACHI_LULCVHR_2005`; it is not tr
 as confirmed 2017 data. This is a source-package discrepancy, not a conversion or
 processing result.
 
-The database engine test was **skipped** because `TEST_DATABASE_URL` was not set.
-PostgreSQL/PostGIS and Docker are not installed here. The schema, spatial SQL,
-transaction behaviour on an actual database and container build still need that
-environment. Query/import unit checks use connection doubles; they are not a live
-database integration claim.
+The destructive database engine test was **skipped** because `TEST_DATABASE_URL`
+was not set to a disposable PostGIS database. Read-only schema and route checks ran
+against the configured team database, but transaction rollback and importer writes
+were not tested there. Docker Desktop is installed but its Linux daemon was not
+running, so the new portable backend image definition could not be built locally.
 
 Automated test fixtures remain explicitly synthetic; the separate live checks above
 used real public source responses without seeding the application. No real teammate
@@ -74,8 +86,6 @@ lint, production build, and browser error-state handling were checked. A populat
 PostGIS database was unavailable, so live successful dashboard values could not be
 browser-tested. Scientific validation remains with Ayesha and Chip.
 
-The installed Starlette test client emitted two upstream deprecation warnings
-about HTTPX and the AnyIO portal alias. They did not cause failures. The current
+The installed FastAPI/Starlette test client emitted one upstream deprecation
+warning about its HTTPX test-client import. It did not cause failures. The current
 test dependency versions are recorded in the requirements files.
-The cache plugin was disabled for this test command because the pre-existing local
-`.pytest_cache` directory is not writable by the current process.

@@ -2,29 +2,49 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Sparkles, MapPin, ArrowRight, Thermometer, Droplets, Trees } from "lucide-react";
+import { MapPin, ArrowRight, Thermometer, Droplets, Trees } from "lucide-react";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import { getAreas, getCities } from "@/lib/api";
-import { MOCK_AREAS, getMockRisk } from "@/lib/mockData";
+import { DataNotice } from "@/components/ui/DataNotice";
+import { errorMessage, getAreas, getCities, getRisk } from "@/lib/api";
 import type { Area } from "@/types/area";
+import type { RiskResponse } from "@/types/risk";
 
 export default function IntelligenceOverviewPage() {
   const [areas, setAreas] = useState<Area[]>([]);
+  const [risks, setRisks] = useState<Record<string, RiskResponse>>({});
+  const [cityNames, setCityNames] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [riskUnavailable, setRiskUnavailable] = useState(false);
 
   useEffect(() => {
-    getCities()
-      .then(async (cities) => {
-        if (cities.length > 0) {
-          const areaList = await getAreas(cities[0].id);
-          setAreas(areaList.length > 0 ? areaList : MOCK_AREAS);
-        } else {
-          setAreas(MOCK_AREAS);
-        }
-      })
-      .catch(() => {
-        setAreas(MOCK_AREAS);
-      });
+    let active = true;
+    async function load() {
+      try {
+        const cities = await getCities();
+        if (!active) return;
+        setCityNames(Object.fromEntries(cities.map((city) => [city.id, city.name])));
+        const areaLists = await Promise.all(cities.map((city) => getAreas(city.id)));
+        const loadedAreas = areaLists.flat();
+        if (!active) return;
+        setAreas(loadedAreas);
+        const results = await Promise.allSettled(loadedAreas.map((area) => getRisk(area.id)));
+        if (!active) return;
+        const available: Record<string, RiskResponse> = {};
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled") available[loadedAreas[index].id] = result.value;
+        });
+        setRisks(available);
+        setRiskUnavailable(results.some((result) => result.status === "rejected"));
+      } catch (reason) {
+        if (active) setError(errorMessage(reason));
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    return () => { active = false; };
   }, []);
 
   return (
@@ -42,14 +62,19 @@ export default function IntelligenceOverviewPage() {
             Spatial AI Risk Intelligence
           </h1>
           <p className="mt-2 text-sm text-slate-400 max-w-3xl">
-            Select a target municipal area to inspect AI-synthesized microclimate anomalies, multi-satellite thermal readings, demographic vulnerability clusters, and physics-grounded intervention strategies.
+            Select an available area and review its supplied risk fields. AI analysis remains pending until the owner-defined schemas and adapter are connected.
           </p>
         </div>
+
+        {loading && <DataNotice title="Loading areas" message="Requesting available city and area records." />}
+        {error && <DataNotice title="Data unavailable" message={error} error />}
+        {!loading && !error && areas.length === 0 && <DataNotice title="No areas available" message="The connected database has no area records to analyze." />}
+        {riskUnavailable && <DataNotice title="Risk data unavailable" message="One or more areas do not yet have a connected risk component or required inputs. Missing scores remain blank." />}
 
         {/* Areas Selection Grid */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {areas.map((area) => {
-            const risk = getMockRisk(area.id);
+            const risk = risks[area.id];
             return (
               <div
                 key={area.id}
@@ -59,16 +84,10 @@ export default function IntelligenceOverviewPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5">
                       <MapPin className="h-3.5 w-3.5 text-cyan-400" />
-                      Karachi Municipal Area
+                      {cityNames[area.cityId] ?? "City unavailable"}
                     </span>
-                    <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                        (risk.scores.overall ?? 0) > 75
-                          ? "bg-red-500/20 text-red-300 border border-red-500/40"
-                          : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                      }`}
-                    >
-                      RISK INDEX {risk.scores.overall ?? "—"}
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                      SCORE {risk?.scores.overall ?? "—"}
                     </span>
                   </div>
 
@@ -77,24 +96,24 @@ export default function IntelligenceOverviewPage() {
                   </h3>
 
                   <p className="mt-2 text-xs text-slate-400 leading-relaxed">
-                    Evaluated against thermal infrared passes and 500m spatial risk grid.
+                    Opens the area workspace when the owner-defined AI contract is connected.
                   </p>
 
                   <div className="mt-5 grid grid-cols-3 gap-2 border-t border-slate-800/80 pt-4 text-center font-mono">
                     <div className="rounded-lg bg-slate-950/60 p-2 border border-slate-800/60">
                       <Thermometer className="h-3.5 w-3.5 text-red-400 mx-auto" />
                       <span className="text-[10px] text-slate-500 block mt-1">HEAT</span>
-                      <span className="text-xs font-bold text-white">{risk.scores.heat ?? "—"}</span>
+                      <span className="text-xs font-bold text-white">{risk?.scores.heat ?? "—"}</span>
                     </div>
                     <div className="rounded-lg bg-slate-950/60 p-2 border border-slate-800/60">
                       <Trees className="h-3.5 w-3.5 text-emerald-400 mx-auto" />
                       <span className="text-[10px] text-slate-500 block mt-1">CANOPY</span>
-                      <span className="text-xs font-bold text-white">{risk.scores.green ?? "—"}</span>
+                      <span className="text-xs font-bold text-white">{risk?.scores.green ?? "—"}</span>
                     </div>
                     <div className="rounded-lg bg-slate-950/60 p-2 border border-slate-800/60">
                       <Droplets className="h-3.5 w-3.5 text-blue-400 mx-auto" />
                       <span className="text-[10px] text-slate-500 block mt-1">FLOOD</span>
-                      <span className="text-xs font-bold text-white">{risk.scores.flood ?? "—"}</span>
+                      <span className="text-xs font-bold text-white">{risk?.scores.flood ?? "—"}</span>
                     </div>
                   </div>
                 </div>

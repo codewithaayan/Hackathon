@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy as np
-from .configs import heatconfig, normalizeconfig
+from backend.config.configs import heatconfig, normalizeconfig
 from .normalize import clamp_array, finite_percentile, badhighvalue
 
 def dn_to_surfacetemp(dn: np.ndarray | list | float) -> np.ndarray:

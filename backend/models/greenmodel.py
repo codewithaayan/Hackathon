@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .configs import greenconfig, normalizeconfig
+from backend.config.configs import greenconfig, normalizeconfig
 from .normalize import clamp_array
 
 

@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Activity, CloudRain, Flame, Trees, Users, Wind } from "lucide-react";
-import { getAreas, getCities, getRisk } from "@/lib/api";
-import { MOCK_CITY, MOCK_AREAS, getMockRisk } from "@/lib/mockData";
+import { errorMessage, getAreas, getCities, getRisk } from "@/lib/api";
 import type { Area, City } from "@/types/area";
 import type { RiskResponse } from "@/types/risk";
 
@@ -27,18 +26,13 @@ export function HeroVisual() {
     getCities()
       .then((items) => {
         if (!active) return;
-        if (items.length > 0) {
-          setCities(items);
-          setCityId(items[0]?.id ?? "");
-        } else {
-          setCities([MOCK_CITY]);
-          setCityId(MOCK_CITY.id);
-        }
+        setCities(items);
+        setCityId(items[0]?.id ?? "");
+        setMessage(items.length ? "Loading area data…" : "No cities are available.");
       })
-      .catch(() => {
+      .catch((reason) => {
         if (!active) return;
-        setCities([MOCK_CITY]);
-        setCityId(MOCK_CITY.id);
+        setMessage(errorMessage(reason));
       });
 
     return () => {
@@ -53,7 +47,13 @@ export function HeroVisual() {
     getAreas(cityId)
       .then(async (areas) => {
         if (!active) return;
-        const targetArea = areas.length > 0 ? areas[0] : MOCK_AREAS[0];
+        const targetArea = areas[0];
+        if (!targetArea) {
+          setArea(null);
+          setRisk(null);
+          setMessage("This city has no areas yet.");
+          return;
+        }
         setArea(targetArea);
         try {
           const result = await getRisk(targetArea.id);
@@ -61,19 +61,18 @@ export function HeroVisual() {
             setRisk(result);
             setMessage("");
           }
-        } catch {
+        } catch (reason) {
           if (active) {
-            setRisk(getMockRisk(targetArea.id));
-            setMessage("");
+            setRisk(null);
+            setMessage(errorMessage(reason));
           }
         }
       })
-      .catch(() => {
+      .catch((reason) => {
         if (!active) return;
-        const targetArea = MOCK_AREAS[0];
-        setArea(targetArea);
-        setRisk(getMockRisk(targetArea.id));
-        setMessage("");
+        setArea(null);
+        setRisk(null);
+        setMessage(errorMessage(reason));
       });
 
     return () => {
@@ -120,7 +119,6 @@ export function HeroVisual() {
           </p>
           <p className="text-3xl font-bold font-mono text-white">
             {risk?.scores.overall ?? "—"}
-            <span className="text-xs text-slate-500 font-normal">/100</span>
           </p>
           <p className="mt-1 max-w-48 text-[11px] font-mono text-cyan-400 font-medium truncate mx-auto">
             {area?.name ?? message}

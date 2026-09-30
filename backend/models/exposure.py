@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy as np
-from .configs import expconfig, normalizeconfig
+from backend.config.configs import expconfig, normalizeconfig
 from .normalize import clamp_array, badhighvalue
 
 

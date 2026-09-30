@@ -14,9 +14,10 @@ docker run --rm --env-file .env -p 127.0.0.1:8000:8000 urbanpulse-backend
 
 The image runs one Uvicorn worker as an unprivileged user. It binds to container
 port 8000 and limits concurrent connections to 40. These are small operational
-defaults, not blueprint requirements. The image has not been built here because
-Docker is unavailable. The Docker context includes only backend source and runtime
-requirements; secrets, local environments, tests and temporary files are excluded.
+defaults, not blueprint requirements. The Docker context includes only backend
+source and runtime requirements; secrets, local environments, tests and temporary
+files are excluded. The definition has not been built in this workspace because
+the Docker Linux daemon is not running.
 
 Before using the team's actual host:
 
@@ -25,6 +26,13 @@ Before using the team's actual host:
 - Run the initial schema explicitly once using the setup role. The API never
   creates tables on startup. Use a restricted API role and a separate ingestion
   role as described in the teammate handoff.
+- Supabase RLS applies to direct PostgreSQL sessions unless the connection role
+  owns the table (without `FORCE ROW LEVEL SECURITY`) or has `BYPASSRLS`. The
+  currently configured connection has both exemptions, so the enabled RLS flags
+  do not restrict backend queries. Before production, replace it with a dedicated
+  non-owner, non-`BYPASSRLS` API role and grant only the required table access, or
+  add explicit policies for that role. The backend should continue using asyncpg;
+  no Supabase client library is required.
 - Set `ALLOWED_HOSTS` to the public backend hostname and `CORS_ORIGINS` to the
   approved frontend origins. These are JSON arrays. CORS controls browser access;
   it is not authentication.

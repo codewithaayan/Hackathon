@@ -21,14 +21,7 @@ import { Footer } from "@/components/layout/Footer";
 import { Navbar } from "@/components/layout/Navbar";
 import { UrbanMap } from "@/components/map/UrbanMap";
 import { DataNotice } from "@/components/ui/DataNotice";
-import { getArea, getCities, getLayer, getPopulation, getRisk } from "@/lib/api";
-import {
-  MOCK_AREAS,
-  MOCK_CITY,
-  getMockLayer,
-  getMockPopulation,
-  getMockRisk,
-} from "@/lib/mockData";
+import { errorMessage, getArea, getCities, getLayer, getPopulation, getRisk } from "@/lib/api";
 import type { Area, City } from "@/types/area";
 import type { MapLayer, PopulationResponse, RiskResponse } from "@/types/risk";
 
@@ -40,6 +33,8 @@ export default function AreaPage() {
   const [population, setPopulation] = useState<PopulationResponse | null>(null);
   const [layer, setLayer] = useState<MapLayer | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [secondaryErrors, setSecondaryErrors] = useState<string[]>([]);
   const [gridMinimized, setGridMinimized] = useState(false);
   const [activeLayer, setActiveLayer] = useState<"heat" | "green" | "flood">("heat");
 
@@ -57,42 +52,44 @@ export default function AreaPage() {
       const [areaResult, citiesResult, riskResult, populationResult, layerResult] = results;
       setLoading(false);
 
-      if (areaResult.status === "fulfilled") {
-        setArea(areaResult.value);
-      } else {
-        const fallback = MOCK_AREAS.find((a) => a.id === id) ?? MOCK_AREAS[0];
-        setArea(fallback);
+      if (areaResult.status === "rejected") {
+        setArea(null);
+        setError(errorMessage(areaResult.reason));
+        return;
       }
+      setArea(areaResult.value);
+      setError(null);
 
       if (citiesResult.status === "fulfilled") {
         setCity(
           citiesResult.value.find(
-            (item) =>
-              item.id ===
-              (areaResult.status === "fulfilled" ? areaResult.value.cityId : "karachi")
+            (item) => item.id === areaResult.value.cityId
           )
         );
-      } else {
-        setCity(MOCK_CITY);
       }
 
       if (riskResult.status === "fulfilled") {
         setRisk(riskResult.value);
       } else {
-        setRisk(getMockRisk(id));
+        setRisk(null);
       }
 
       if (populationResult.status === "fulfilled") {
         setPopulation(populationResult.value);
       } else {
-        setPopulation(getMockPopulation(id));
+        setPopulation(null);
       }
 
       if (layerResult.status === "fulfilled") {
         setLayer(layerResult.value);
       } else {
-        setLayer(getMockLayer(id, activeLayer));
+        setLayer(null);
       }
+
+      const unavailable = [citiesResult, riskResult, populationResult, layerResult]
+        .filter((result) => result.status === "rejected")
+        .map((result) => errorMessage((result as PromiseRejectedResult).reason));
+      setSecondaryErrors([...new Set(unavailable)]);
     });
 
     return () => {
@@ -118,7 +115,7 @@ export default function AreaPage() {
         <main className="mx-auto max-w-4xl px-4 pt-28">
           <DataNotice
             title="Area unavailable"
-            message="Could not load this area. Please try again."
+            message={error ?? "Could not load this area. Please try again."}
             error
           />
         </main>
@@ -140,6 +137,10 @@ export default function AreaPage() {
 
       <main className="mx-auto w-full max-w-7xl flex-1 space-y-8 px-4 pb-20 pt-24 sm:px-6 lg:px-8">
         <DashboardHeader area={area} city={city} />
+
+        {secondaryErrors.map((message) => (
+          <DataNotice key={message} title="Some data is unavailable" message={message} error />
+        ))}
 
         {/* Quick Action Navigation Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-500/25 bg-cyan-950/20 p-4 font-mono text-xs">
@@ -207,7 +208,7 @@ export default function AreaPage() {
                 Spatial Microclimate Grid
               </h3>
               <span className="rounded-full border border-cyan-500/30 bg-cyan-950/40 px-2 py-0.5 text-[10px] font-mono text-cyan-400">
-                500 m resolution
+                supplied geometry
               </span>
             </div>
 
@@ -259,7 +260,6 @@ export default function AreaPage() {
               selectedArea={area}
               layer={layer}
               heightClassName="h-[520px]"
-              mode="explore"
             />
           </div>
 

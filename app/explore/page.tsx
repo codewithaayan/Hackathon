@@ -7,8 +7,6 @@ import {
   Grid,
   Maximize2,
   Minimize2,
-  Database,
-  RefreshCw,
   Sparkles,
   Layers,
 } from "lucide-react";
@@ -20,13 +18,7 @@ import { LayerControls } from "@/components/map/LayerControls";
 import { UrbanMap } from "@/components/map/UrbanMap";
 import { RiskLegend } from "@/components/map/RiskLegend";
 import { DataNotice } from "@/components/ui/DataNotice";
-import { getAreas, getCities, getLayer, getRisk } from "@/lib/api";
-import {
-  MOCK_CITY,
-  MOCK_AREAS,
-  getMockRisk,
-  getMockLayer,
-} from "@/lib/mockData";
+import { errorMessage, getAreas, getCities, getLayer, getRisk } from "@/lib/api";
 import type { Area, City } from "@/types/area";
 import type { LayerName, MapLayer, RiskResponse } from "@/types/risk";
 import { cn } from "@/lib/utils";
@@ -43,11 +35,11 @@ export default function ExplorePage() {
   const [loading, setLoading] = useState(true);
   const [layerLoading, setLayerLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [riskError, setRiskError] = useState<string | null>(null);
   const [layerError, setLayerError] = useState<string | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState(false);
   const [gridMinimized, setGridMinimized] = useState(false);
 
-  // Load cities with automatic fallback to authentic Karachi data if backend is offline/unconfigured
+  // Load only records supplied by the backend. Empty and unavailable states stay visible.
   const loadData = useCallback(() => {
     let active = true;
     async function fetchData() {
@@ -56,22 +48,15 @@ export default function ExplorePage() {
       try {
         const items = await getCities();
         if (!active) return;
-        if (items.length > 0) {
-          setCities(items);
-          setCityId(items[0]?.id ?? "");
-          setIsDemoMode(false);
-        } else {
-          setCities([MOCK_CITY]);
-          setCityId(MOCK_CITY.id);
-          setIsDemoMode(true);
-        }
-      } catch {
+        setCities(items);
+        setCityId(items[0]?.id ?? "");
+        if (items.length === 0) setLoading(false);
+      } catch (reason) {
         if (!active) return;
-        setCities([MOCK_CITY]);
-        setCityId(MOCK_CITY.id);
-        setIsDemoMode(true);
-      } finally {
-        if (active) setLoading(false);
+        setCities([]);
+        setCityId("");
+        setError(errorMessage(reason));
+        setLoading(false);
       }
     }
     fetchData();
@@ -91,31 +76,16 @@ export default function ExplorePage() {
     let active = true;
 
     async function fetchAreas() {
-      if (isDemoMode) {
-        await Promise.resolve();
-        if (!active) return;
-        setAreas(MOCK_AREAS);
-        setAreaId(MOCK_AREAS[0]?.id ?? "");
-        setLoading(false);
-        return;
-      }
-
       try {
         const items = await getAreas(cityId);
         if (!active) return;
-        if (items.length > 0) {
-          setAreas(items);
-          setAreaId(items[0]?.id ?? "");
-        } else {
-          setAreas(MOCK_AREAS);
-          setAreaId(MOCK_AREAS[0]?.id ?? "");
-          setIsDemoMode(true);
-        }
-      } catch {
+        setAreas(items);
+        setAreaId(items[0]?.id ?? "");
+      } catch (reason) {
         if (!active) return;
-        setAreas(MOCK_AREAS);
-        setAreaId(MOCK_AREAS[0]?.id ?? "");
-        setIsDemoMode(true);
+        setAreas([]);
+        setAreaId("");
+        setError(errorMessage(reason));
       } finally {
         if (active) setLoading(false);
       }
@@ -125,7 +95,7 @@ export default function ExplorePage() {
     return () => {
       active = false;
     };
-  }, [cityId, isDemoMode]);
+  }, [cityId]);
 
   // Load risk and layer when areaId or activeLayer changes
   useEffect(() => {
@@ -133,16 +103,6 @@ export default function ExplorePage() {
     let active = true;
 
     async function fetchLayerAndRisk() {
-      if (isDemoMode) {
-        await Promise.resolve();
-        if (!active) return;
-        setRisk(getMockRisk(areaId));
-        setLayer(getMockLayer(areaId, activeLayer));
-        setLayerLoading(false);
-        setLayerError(null);
-        return;
-      }
-
       setLayerLoading(true);
       try {
         const [riskResult, layerResult] = await Promise.allSettled([
@@ -152,16 +112,18 @@ export default function ExplorePage() {
         if (!active) return;
         if (riskResult.status === "fulfilled") {
           setRisk(riskResult.value);
+          setRiskError(null);
         } else {
-          setRisk(getMockRisk(areaId));
+          setRisk(null);
+          setRiskError(errorMessage(riskResult.reason));
         }
 
         if (layerResult.status === "fulfilled") {
           setLayer(layerResult.value);
           setLayerError(null);
         } else {
-          setLayer(getMockLayer(areaId, activeLayer));
-          setLayerError(null);
+          setLayer(null);
+          setLayerError(errorMessage(layerResult.reason));
         }
       } finally {
         if (active) setLayerLoading(false);
@@ -172,7 +134,7 @@ export default function ExplorePage() {
     return () => {
       active = false;
     };
-  }, [areaId, activeLayer, isDemoMode]);
+  }, [areaId, activeLayer]);
 
   const selectedCity = cities.find((city) => city.id === cityId);
   const selectedArea = areas.find((area) => area.id === areaId);
@@ -186,6 +148,7 @@ export default function ExplorePage() {
     setAreas([]);
     setAreaId("");
     setRisk(null);
+    setRiskError(null);
     setLayer(null);
     setError(null);
     setLoading(Boolean(nextCityId));
@@ -194,6 +157,7 @@ export default function ExplorePage() {
   const selectArea = (nextAreaId: string) => {
     setAreaId(nextAreaId);
     setRisk(null);
+    setRiskError(null);
     setLayer(null);
     setLayerError(null);
     setLayerLoading(Boolean(nextAreaId));
@@ -223,26 +187,11 @@ export default function ExplorePage() {
               Explore Your City
             </h1>
             <p className="mt-1 text-xs text-slate-400">
-              Interactive high-resolution microclimate grids, environmental telemetry, and risk models.
+              Browse the city, area, and GeoJSON records currently supplied by the backend.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {isDemoMode && (
-              <div className="flex items-center gap-2 rounded-lg border border-cyan-500/30 bg-cyan-950/40 px-3 py-1.5 text-xs font-mono text-cyan-300 shadow-sm">
-                <Database className="h-3.5 w-3.5 text-cyan-400" />
-                <span>Karachi Geospatial Telemetry</span>
-                <button
-                  type="button"
-                  onClick={loadData}
-                  className="ml-1 text-slate-400 hover:text-white"
-                  title="Check Live Backend"
-                >
-                  <RefreshCw className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-
             <label className="flex items-center text-xs text-slate-400 font-mono">
               City:
               <select
@@ -262,6 +211,13 @@ export default function ExplorePage() {
         </div>
 
         {error && <DataNotice title="Data notice" message={error} error />}
+        {riskError && <DataNotice title="Risk data unavailable" message={riskError} error />}
+        {!loading && !error && cities.length === 0 && (
+          <DataNotice title="No cities available" message="The connected database returned an empty city list." />
+        )}
+        {!loading && cityId && areas.length === 0 && (
+          <DataNotice title="No areas available" message="This city has no area records yet." />
+        )}
 
         {/* Main Grid: Sidebar Controls & Interactive Map */}
         <div className="grid gap-6 lg:grid-cols-12">
@@ -377,7 +333,7 @@ export default function ExplorePage() {
               <p className="text-[11px] text-slate-400">
                 {gridMinimized
                   ? "Grid cells are minimized to clear the map view. Click 'Full Grid' to view individual cell metrics."
-                  : "500m regular cells are active with choropleth shading. Click any cell to inspect microclimate data."}
+                  : "Supplied grid geometry is visible. Click a cell to inspect the values returned by the layer route."}
               </p>
             </div>
 
@@ -417,7 +373,6 @@ export default function ExplorePage() {
                 layerLoading={layerLoading}
                 layerError={layerError}
                 heightClassName="h-[560px]"
-                mode="explore"
                 initialGridMinimized={gridMinimized}
                 onGridMinimizeChange={(min) => setGridMinimized(min)}
               />

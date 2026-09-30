@@ -7,31 +7,31 @@ const STEPS = [
     step: "01",
     name: "SELECT AREA",
     action: "Target Neighbourhood",
-    description: "Choose any administrative zone, district, or sub-ward across metropolitan grid cells.",
+    description: "Choose from the city and area records currently available through the backend.",
     icon: MapPin,
     accent: "border-cyan-500/30 text-cyan-400 bg-cyan-500/10",
   },
   {
     step: "02",
     name: "ANALYZE DATA",
-    action: "Multi-Source Fusion",
-    description: "Synthesize multi-spectral satellite thermal bands, vegetation indices, and localized air sensors.",
+    action: "Validated Records",
+    description: "Display only processed environmental values and geometry supplied by the data owners.",
     icon: BarChart3,
     accent: "border-blue-500/30 text-blue-400 bg-blue-500/10",
   },
   {
     step: "03",
     name: "UNDERSTAND RISK",
-    action: "Composite Scoring",
-    description: "Assess the compound Urban Priority Score and evaluate high-risk vulnerable population exposure.",
+    action: "Owner-Supplied Scores",
+    description: "Show structured risk and exposure fields after the risk adapter validates its required inputs.",
     icon: ShieldAlert,
     accent: "border-amber-500/30 text-amber-400 bg-amber-500/10",
   },
   {
     step: "04",
     name: "EXPLORE INTERVENTIONS",
-    action: "Thermodynamic Simulation",
-    description: "Simulate cool roofs, afforestation, drainage, and traffic policies to project de-escalated risk deltas.",
+    action: "Pending Simulator",
+    description: "Enable interventions only after the scientific owners supply schemas, coefficients, and a model adapter.",
     icon: Sliders,
     accent: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10",
   },
@@ -96,7 +96,7 @@ export function HowItWorks() {
                       Next <ChevronRight className="w-3 h-3 inline" />
                     </span>
                   ) : (
-                    <span className="text-emerald-400">COMPLETE</span>
+                    <span className="text-slate-400">PENDING</span>
                   )}
                 </div>
               </div>

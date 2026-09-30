@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy as np
-from .configs import floodconfig, normalizeconfig
+from backend.config.configs import floodconfig, normalizeconfig
 from .normalize import (clamp_array, invert_score, badhighvalue, weighted_avg)
 
 

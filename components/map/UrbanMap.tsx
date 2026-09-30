@@ -13,45 +13,20 @@ import {
   CloudRain,
   EyeOff,
   Crosshair,
-  Sparkles,
 } from "lucide-react";
 import type { Area, GeoJSONGeometry } from "@/types/area";
 import type { LayerName, MapFeature, MapLayer } from "@/types/risk";
 import { cn, formatNumber } from "@/lib/utils";
 
-export interface IntelligenceHotspot {
-  id: string;
-  name: string;
-  type: "thermal" | "flood" | "canopy_deficit";
-  cellId: string;
-  coordinates: [number, number]; // [lon, lat]
-  title: string;
-  description: string;
-  score: number;
-}
-
-export interface SimulationAdjustment {
-  treeChange: number; // 0 to 50
-  coolRoofChange: number; // 0 to 60
-  drainageChange: number; // 0 to 50
-  trafficChange: number; // 0 to 40
-}
-
 export interface UrbanMapProps {
-  activeLayer?: LayerName | "intelligence" | "simulator";
+  activeLayer?: LayerName;
   selectedArea?: Area | null;
   layer?: MapLayer | null;
   layerLoading?: boolean;
   layerError?: string | null;
   heightClassName?: string;
-  mode?: "explore" | "intelligence" | "simulator";
   initialGridMinimized?: boolean;
   onGridMinimizeChange?: (minimized: boolean) => void;
-  hotspots?: IntelligenceHotspot[];
-  onSelectHotspot?: (hotspot: IntelligenceHotspot) => void;
-  selectedHotspotId?: string | null;
-  simulationAdjustment?: SimulationAdjustment;
-  showComparison?: boolean;
   onSelectCell?: (feature: MapFeature | null) => void;
 }
 
@@ -63,7 +38,8 @@ interface BBox {
 }
 
 function mercatorY(lat: number): number {
-  const rad = (lat * Math.PI) / 180;
+  const clamped = Math.max(-85.051129, Math.min(85.051129, lat));
+  const rad = (clamped * Math.PI) / 180;
   return Math.log(Math.tan(Math.PI / 4 + rad / 2));
 }
 
@@ -72,14 +48,10 @@ export function UrbanMap({
   selectedArea,
   layer,
   layerLoading = false,
+  layerError,
   heightClassName = "h-[540px]",
-  mode = "explore",
   initialGridMinimized = false,
   onGridMinimizeChange,
-  hotspots = [],
-  onSelectHotspot,
-  selectedHotspotId,
-  simulationAdjustment,
   onSelectCell,
 }: UrbanMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,7 +87,11 @@ export function UrbanMap({
     const coords: Array<[number, number]> = [];
 
     const extractCoords = (geom: GeoJSONGeometry | null | undefined) => {
-      if (!geom || !geom.coordinates) return;
+      if (!geom) return;
+      if (geom.geometries) {
+        geom.geometries.forEach(extractCoords);
+      }
+      if (!geom.coordinates) return;
       const traverse = (item: unknown) => {
         if (Array.isArray(item)) {
           if (
@@ -141,7 +117,7 @@ export function UrbanMap({
     }
 
     if (coords.length === 0) {
-      return { minLon: 66.98, minLat: 24.82, maxLon: 67.12, maxLat: 24.93 };
+      return { minLon: -180, minLat: -85, maxLon: 180, maxLat: 85 };
     }
 
     let minLon = Infinity;
@@ -190,16 +166,17 @@ export function UrbanMap({
     [bbox, minMerc, maxMerc]
   );
 
-  const coordsToSvgPath = useCallback(
-    (rings: unknown): string => {
-      if (!Array.isArray(rings) || rings.length === 0) return "";
-      const isMulti =
-        Array.isArray(rings[0]) &&
-        Array.isArray(rings[0][0]) &&
-        Array.isArray(rings[0][0][0]);
-      const polygonRings: Array<Array<[number, number]>> = isMulti
-        ? (rings as unknown as Array<Array<Array<[number, number]>>>).flat()
-        : (rings as unknown as Array<Array<[number, number]>>);
+  const geometryToSvgPath = useCallback(
+    (geometry: GeoJSONGeometry | null | undefined): string => {
+      if (!geometry?.coordinates || !Array.isArray(geometry.coordinates)) return "";
+      let polygonRings: Array<Array<[number, number]>>;
+      if (geometry.type === "Polygon") {
+        polygonRings = geometry.coordinates as Array<Array<[number, number]>>;
+      } else if (geometry.type === "MultiPolygon") {
+        polygonRings = (geometry.coordinates as Array<Array<Array<[number, number]>>>).flat();
+      } else {
+        return "";
+      }
 
       return polygonRings
         .map((ring) => {
@@ -251,75 +228,15 @@ export function UrbanMap({
     setZoom((z) => Math.min(5, Math.max(0.8, z * factor)));
   };
 
-  // Color functions for choropleth mapping
+  // The scientific owners have not supplied risk bands or styling thresholds.
+  // Use one neutral color per layer so missing values are never rendered as zero.
   const getCellFill = useCallback(
-    (feature: MapFeature) => {
-      const props = (feature.properties ?? {}) as Record<string, unknown>;
-
-      if (mode === "simulator" && simulationAdjustment) {
-        const baseHeat = Number(props.heat_score ?? props.temperature ?? 70);
-        const baseGreen = Number(props.green_score ?? 20);
-        const baseFlood = Number(props.flood_score ?? 60);
-
-        const heatDelta =
-          simulationAdjustment.treeChange * 0.4 +
-          simulationAdjustment.coolRoofChange * 0.35 +
-          simulationAdjustment.trafficChange * 0.15;
-        const floodDelta =
-          simulationAdjustment.drainageChange * 0.5 + simulationAdjustment.treeChange * 0.2;
-        const greenDelta = simulationAdjustment.treeChange * 0.9;
-
-        const projectedHeat = Math.max(15, Math.round(baseHeat - heatDelta));
-        const projectedFlood = Math.max(15, Math.round(baseFlood - floodDelta));
-        const projectedGreen = Math.min(99, Math.round(baseGreen + greenDelta));
-
-        if (activeLayer === "green") {
-          return projectedGreen > 65
-            ? "rgba(16, 185, 129, 0.75)"
-            : projectedGreen > 40
-              ? "rgba(52, 211, 153, 0.65)"
-              : "rgba(120, 53, 15, 0.55)";
-        }
-        if (activeLayer === "flood") {
-          return projectedFlood > 70
-            ? "rgba(30, 64, 175, 0.85)"
-            : projectedFlood > 45
-              ? "rgba(14, 165, 233, 0.65)"
-              : "rgba(6, 182, 212, 0.45)";
-        }
-        return projectedHeat > 80
-          ? "rgba(220, 38, 38, 0.85)"
-          : projectedHeat > 65
-            ? "rgba(249, 115, 22, 0.75)"
-            : projectedHeat > 50
-              ? "rgba(234, 179, 8, 0.65)"
-              : "rgba(34, 197, 94, 0.65)";
-      }
-
-      if (activeLayer === "green") {
-        const score = Number(props.green_score ?? (Number(props.ndvi ?? 0) * 100));
-        if (score >= 60) return "rgba(16, 185, 129, 0.75)";
-        if (score >= 40) return "rgba(52, 211, 153, 0.6)";
-        if (score >= 25) return "rgba(163, 230, 53, 0.5)";
-        return "rgba(180, 83, 9, 0.55)";
-      }
-
-      if (activeLayer === "flood") {
-        const score = Number(props.flood_score ?? 50);
-        if (score >= 75) return "rgba(29, 78, 216, 0.85)";
-        if (score >= 55) return "rgba(2, 132, 199, 0.7)";
-        if (score >= 35) return "rgba(6, 182, 212, 0.55)";
-        return "rgba(56, 189, 248, 0.35)";
-      }
-
-      const score = Number(props.heat_score ?? props.temperature ?? 60);
-      if (score >= 80) return "rgba(220, 38, 38, 0.85)";
-      if (score >= 65) return "rgba(239, 68, 68, 0.7)";
-      if (score >= 50) return "rgba(245, 158, 11, 0.65)";
-      if (score >= 35) return "rgba(234, 179, 8, 0.55)";
-      return "rgba(34, 197, 94, 0.55)";
+    () => {
+      if (activeLayer === "green") return "rgba(16, 185, 129, 0.55)";
+      if (activeLayer === "flood") return "rgba(14, 165, 233, 0.55)";
+      return "rgba(249, 115, 22, 0.55)";
     },
-    [activeLayer, mode, simulationAdjustment]
+    [activeLayer]
   );
 
   const getCellStroke = useCallback(
@@ -333,13 +250,14 @@ export function UrbanMap({
   );
 
   const drawableFeatures = useMemo(() => {
-    return (layer?.features ?? []).filter((f) => f.geometry !== null);
+    return (layer?.features ?? []).filter(
+      (feature) => feature.geometry?.type === "Polygon" || feature.geometry?.type === "MultiPolygon"
+    );
   }, [layer]);
 
   const areaBoundaryPath = useMemo(() => {
-    if (!selectedArea?.geometry?.coordinates) return "";
-    return coordsToSvgPath(selectedArea.geometry.coordinates);
-  }, [selectedArea, coordsToSvgPath]);
+    return geometryToSvgPath(selectedArea?.geometry);
+  }, [selectedArea, geometryToSvgPath]);
 
   return (
     <div
@@ -370,15 +288,9 @@ export function UrbanMap({
               <Trees className="h-3.5 w-3.5 text-emerald-400" />
             ) : activeLayer === "flood" ? (
               <CloudRain className="h-3.5 w-3.5 text-blue-400" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-            )}
+            ) : null}
             <span className="font-bold tracking-wider uppercase">
-              {mode === "simulator"
-                ? "SIMULATION MATRIX"
-                : mode === "intelligence"
-                  ? "SPATIAL AI INTELLIGENCE"
-                  : `${activeLayer.toUpperCase()} LAYER`}
+              {`${activeLayer.toUpperCase()} LAYER`}
             </span>
           </div>
 
@@ -418,6 +330,10 @@ export function UrbanMap({
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
               Loading GeoJSON layer…
             </span>
+          ) : layerError ? (
+            <span className="rounded-lg border border-red-500/30 bg-red-950/60 px-2.5 py-1 text-[11px] text-red-300">
+              {layerError}
+            </span>
           ) : drawableFeatures.length > 0 ? (
             <span className="hidden sm:flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950/80 px-2.5 py-1 text-[11px] text-slate-400">
               <Grid className="h-3 w-3 text-cyan-400" />
@@ -454,14 +370,6 @@ export function UrbanMap({
 
             <filter id="cyanGlow" x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="3" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-
-            <filter id="hotspotGlow" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="5" result="blur" />
               <feMerge>
                 <feMergeNode in="blur" />
                 <feMergeNode in="SourceGraphic" />
@@ -509,7 +417,7 @@ export function UrbanMap({
             {drawableFeatures.map((feature, i) => {
               const geom = feature.geometry;
               if (!geom?.coordinates) return null;
-              const path = coordsToSvgPath(geom.coordinates);
+              const path = geometryToSvgPath(geom);
               if (!path) return null;
 
               const isHovered = hoveredCell === feature;
@@ -520,7 +428,7 @@ export function UrbanMap({
                 <path
                   key={String(props.grid_cell_id ?? i)}
                   d={path}
-                  fill={gridMinimized ? "transparent" : getCellFill(feature)}
+                  fill={gridMinimized ? "transparent" : getCellFill()}
                   fillOpacity={gridMinimized ? 0 : 0.85}
                   stroke={getCellStroke(feature, isHovered, isSelected)}
                   strokeWidth={isSelected ? 2.5 : isHovered ? 2 : gridMinimized ? 0.8 : 1.2}
@@ -536,44 +444,6 @@ export function UrbanMap({
               );
             })}
 
-            {hotspots.map((spot) => {
-              const [x, y] = project(spot.coordinates[0], spot.coordinates[1]);
-              const isSelected = selectedHotspotId === spot.id;
-              const color =
-                spot.type === "thermal"
-                  ? "#ef4444"
-                  : spot.type === "flood"
-                    ? "#3b82f6"
-                    : "#10b981";
-
-              return (
-                <g
-                  key={spot.id}
-                  transform={`translate(${x}, ${y})`}
-                  className="cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelectHotspot?.(spot);
-                  }}
-                >
-                  <circle r={isSelected ? 16 : 11} fill={color} fillOpacity="0.25" filter="url(#hotspotGlow)">
-                    <animate attributeName="r" values={isSelected ? "14;20;14" : "9;14;9"} dur="2.5s" repeatCount="indefinite" />
-                  </circle>
-                  <circle r={isSelected ? 8 : 6} fill={color} stroke="#ffffff" strokeWidth="2" />
-                  <text
-                    y={-14}
-                    textAnchor="middle"
-                    fill="#ffffff"
-                    fontSize="10"
-                    fontFamily="monospace"
-                    fontWeight="bold"
-                    className="pointer-events-none drop-shadow-md"
-                  >
-                    {spot.name}
-                  </text>
-                </g>
-              );
-            })}
           </g>
         </svg>
       </div>
@@ -603,11 +473,11 @@ export function UrbanMap({
           {(() => {
             const p = (hoveredCell.properties ?? {}) as Record<string, unknown>;
             const cellId = String(p.grid_cell_id ?? "Cell");
-            const temp = p.temperature !== undefined ? `${p.temperature}°C` : "—";
-            const heatScore = p.heat_score !== undefined ? `${p.heat_score}/100` : "—";
-            const ndvi = p.ndvi !== undefined ? `${p.ndvi}` : "—";
-            const floodScore = p.flood_score !== undefined ? `${p.flood_score}/100` : "—";
-            const pop = p.population !== undefined ? formatNumber(Number(p.population)) : "—";
+            const temp = p.temperature == null ? "—" : String(p.temperature);
+            const heatScore = p.heat_score == null ? "—" : String(p.heat_score);
+            const ndvi = p.ndvi == null ? "—" : String(p.ndvi);
+            const floodScore = p.flood_score == null ? "—" : String(p.flood_score);
+            const pop = p.population == null ? "—" : formatNumber(Number(p.population));
 
             return (
               <div className="space-y-2">
@@ -616,15 +486,8 @@ export function UrbanMap({
                     <Crosshair className="h-3 w-3 text-cyan-400" />
                     {cellId}
                   </span>
-                  <span
-                    className={cn(
-                      "text-[9px] px-1.5 py-0.5 rounded font-bold uppercase",
-                      Number(p.heat_score ?? 0) > 80 || Number(p.flood_score ?? 0) > 75
-                        ? "bg-red-500/20 text-red-300 border border-red-500/40"
-                        : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                    )}
-                  >
-                    {String(p.vulnerability ?? "Active")}
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                    SUPPLIED VALUES
                   </span>
                 </div>
 
@@ -647,7 +510,7 @@ export function UrbanMap({
                   </div>
                   <div className="col-span-2 pt-1 border-t border-slate-900 flex justify-between text-[10px]">
                     <span className="text-slate-400">EST. POPULATION:</span>
-                    <span className="font-bold text-cyan-200">{pop} residents</span>
+                    <span className="font-bold text-cyan-200">{pop}</span>
                   </div>
                 </div>
               </div>
@@ -682,24 +545,24 @@ export function UrbanMap({
                   <div>
                     <span className="text-[9px] text-slate-400">SURFACE HEAT</span>
                     <p className="text-red-400 font-bold">
-                      {String(p.temperature ?? "—")}°C
+                      {p.temperature == null ? "—" : String(p.temperature)}
                     </p>
                   </div>
                   <div>
                     <span className="text-[9px] text-slate-400">CANOPY COVER</span>
                     <p className="text-emerald-400 font-bold">
-                      {String(p.green_percentage ?? "—")}%
+                      {p.green_percentage == null ? "—" : String(p.green_percentage)}
                     </p>
                   </div>
                   <div>
                     <span className="text-[9px] text-slate-400">PRECIPITATION</span>
                     <p className="text-blue-400 font-bold">
-                      {String(p.rainfall ?? "—")}mm
+                      {p.rainfall == null ? "—" : String(p.rainfall)}
                     </p>
                   </div>
                   <div>
                     <span className="text-[9px] text-slate-400">POPULATION</span>
-                    <p className="text-cyan-300 font-bold">{formatNumber(Number(p.population ?? 0))}</p>
+                    <p className="text-cyan-300 font-bold">{p.population == null ? "—" : formatNumber(Number(p.population))}</p>
                   </div>
                 </div>
               </div>
@@ -712,23 +575,22 @@ export function UrbanMap({
       <div className="relative z-20 flex items-center justify-between p-3 sm:p-4 text-[11px] font-mono border-t border-slate-900 bg-[#030713]/90 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <span className="text-slate-400">LOW</span>
+            <span className="text-slate-400">SUPPLIED LAYER</span>
             <div
               className={cn(
                 "h-2 w-20 sm:w-28 rounded-full",
                 activeLayer === "heat"
-                  ? "bg-gradient-to-r from-yellow-400 via-amber-500 to-red-600"
+                  ? "bg-orange-500"
                   : activeLayer === "green"
-                    ? "bg-gradient-to-r from-amber-800 via-lime-500 to-emerald-500"
-                    : "bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-800"
+                    ? "bg-emerald-500"
+                    : "bg-sky-500"
               )}
             />
-            <span className="text-slate-400">CRITICAL</span>
           </div>
 
           <span className="hidden sm:inline-block text-slate-500">|</span>
           <span className="hidden sm:inline-block text-slate-400">
-            WGS84 EPSG:4326 • 500m Cells
+            WGS84 EPSG:4326 • supplied grid geometry
           </span>
         </div>
 

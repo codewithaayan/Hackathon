@@ -3,8 +3,9 @@
 This folder contains the FastAPI API, PostgreSQL/PostGIS schema and queries, caching,
 request validation, external source clients, and connection points for the team's
 data, calculations and AI.
-It implements the ten routes in the blueprint. No real city data or teammate
-components were supplied, so nothing is seeded and unavailable components return 503.
+It implements the ten routes in the blueprint. No real processed dataset or
+teammate component was supplied. The connected database currently has only the
+manual Karachi/Gulshan placeholder rows; unavailable components return 503.
 
 The project folder was empty before this work. Both the four-page backend brief
 supplied by Abd and the 13-page UrbanPulse blueprint were read in full.
@@ -129,7 +130,8 @@ upserts, transaction rollback and scenario writes.
 ## Built With
 
 Built With: Python, FastAPI, Uvicorn, PostgreSQL, PostGIS, asyncpg, Pydantic,
-pydantic-settings, geojson-pydantic, pytest, and HTTPX.
-PostgreSQL/PostGIS are the intended database stack and have not been run locally.
-No runtime LLM provider or project dataset is configured. External source metadata
+pydantic-settings, geojson-pydantic, NumPy, pytest, and HTTPX.
+The configured Supabase PostgreSQL/PostGIS schema and read routes have been checked
+live without writes; the disposable write/rollback test still requires
+`TEST_DATABASE_URL`. No runtime LLM provider or project dataset is configured. External source metadata
 and transport checks do not count as scientific validation or a loaded city dataset.

@@ -11,6 +11,7 @@ class ReadCache:
         self.max_entries = max_entries
         self.clock = clock
         self.entries = OrderedDict()
+        self.generation = 0
 
     async def read(self, key, load):
         entry = self.entries.get(key)
@@ -20,8 +21,11 @@ class ReadCache:
                 self.entries.move_to_end(key)
                 return deepcopy(value)
             del self.entries[key]
+        generation = self.generation
         value = await load()
-        if value and self.ttl_seconds > 0:
+        # A write may clear the cache while this load is in flight. Return the
+        # completed read to its caller, but never reinsert it after invalidation.
+        if value and self.ttl_seconds > 0 and generation == self.generation:
             self.entries[key] = (self.clock() + self.ttl_seconds, deepcopy(value))
             self.entries.move_to_end(key)
             while len(self.entries) > self.max_entries:
@@ -30,3 +34,4 @@ class ReadCache:
 
     def clear(self):
         self.entries.clear()
+        self.generation += 1

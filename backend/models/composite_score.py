@@ -1,6 +1,6 @@
 from __future__ import annotations
 import numpy as np
-from .configs import cpsconfig, normalizeconfig
+from backend.config.configs import cpsconfig, normalizeconfig
 from .normalize import clamp_array, invert_score
 
 

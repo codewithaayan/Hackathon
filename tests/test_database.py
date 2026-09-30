@@ -69,6 +69,27 @@ def test_cache_never_stores_missing_or_failed_reads():
     asyncio.run(check())
 
 
+def test_cache_clear_does_not_reinsert_an_inflight_stale_read():
+    async def check():
+        cache = ReadCache(30, 2)
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def load():
+            started.set()
+            await release.wait()
+            return [{"value": "stale"}]
+
+        task = asyncio.create_task(cache.read("key", load))
+        await started.wait()
+        cache.clear()
+        release.set()
+        assert await task == [{"value": "stale"}]
+        assert not cache.entries
+
+    asyncio.run(check())
+
+
 def test_queries_bind_ids_and_decode_geometry():
     async def check():
         conn = AsyncMock()
